@@ -27,7 +27,7 @@ services:
     container_name: kiwi-wspr
     restart: unless-stopped
     ports:
-      - "8009:8080"  # Web interface (8009 external, 8080 internal)
+      - "8009:8009"  # Web interface
     volumes:
       - kiwi-wspr-data:/app/data
     environment:
