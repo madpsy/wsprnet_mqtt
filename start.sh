@@ -55,15 +55,8 @@ fi
 
 echo ""
 
-# Ensure sdr-network exists
-if ! docker network inspect sdr-network >/dev/null 2>&1; then
-    echo "Creating sdr-network..."
-    docker network create sdr-network --subnet 172.20.0.0/16
-    echo "✓ sdr-network created"
-    echo ""
-fi
-
 # Build and start all services
+# Note: Docker Compose will create the sdr-network automatically
 $DOCKER_COMPOSE -f $COMPOSE_FILE up -d $BUILD_FLAG
 
 echo ""

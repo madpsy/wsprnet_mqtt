@@ -119,21 +119,6 @@ echo ""
 echo "✓ All files downloaded successfully"
 echo ""
 
-# Create sdr-network if it doesn't exist
-echo "Setting up Docker network..."
-if docker network inspect sdr-network >/dev/null 2>&1; then
-    echo "✓ sdr-network already exists"
-else
-    echo "Creating sdr-network..."
-    if docker network create sdr-network --subnet 172.20.0.0/16 2>/dev/null; then
-        echo "✓ sdr-network created"
-    else
-        echo "⚠️  Network creation failed (may already exist with different settings)"
-        echo "   Continuing with existing network..."
-    fi
-fi
-echo ""
-
 # Pull Docker images
 if [ "$IS_UPDATE" = true ]; then
     echo "Pulling latest Docker images..."

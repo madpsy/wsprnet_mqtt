@@ -148,23 +148,21 @@ docker-compose logs wsprnet-mqtt | grep "Generated random admin password"
 
 ## Service Communication
 
-All services are connected via the `sdr-network` Docker network (shared with ka9q_ubersdr). The applications can reference each other by their container names:
+All services are connected via the `sdr-network` Docker network (compatible with ka9q_ubersdr). The applications can reference each other by their container names:
 
 - **mosquitto** - MQTT broker
 - **kiwi-wspr** - KiwiSDR WSPR decoder
 - **wsprnet-mqtt** - WSPR MQTT aggregator
-- **ka9q_ubersdr** - UberSDR web interface (if running)
-- **ka9q-radio** - KA9Q radio backend (if running)
+
+If running on the same host as ka9q_ubersdr, containers can also reference:
+- **ka9q_ubersdr** - UberSDR web interface
+- **ka9q-radio** - KA9Q radio backend
 
 ### Network Setup
 
-The `sdr-network` must be created before starting these services:
+The `sdr-network` is automatically created by Docker Compose with subnet `172.20.0.0/16`. This is compatible with the ka9q_ubersdr stack. Docker Compose will create the network if it doesn't exist, or use the existing one if it does.
 
-```bash
-docker network create sdr-network --subnet 172.20.0.0/16
-```
-
-This network is shared with the ka9q_ubersdr stack, allowing all containers to communicate with each other by name. The network is marked as `external: true` in the compose files, meaning it must exist before starting the services.
+**Note:** Each Docker Compose stack creates its own prefixed network (e.g., `wsprnet_mqtt_sdr-network`, `ubersdr_sdr-network`). Containers within the same stack can communicate by name. To enable cross-stack communication, you would need to use external networks or connect containers to multiple networks.
 
 ## MQTT Configuration
 
