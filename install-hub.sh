@@ -75,6 +75,13 @@ echo ""
 mkdir -p "$INSTALL_DIR"
 cd "$INSTALL_DIR"
 
+# Stop running services if this is an update (to allow file overwrites)
+if [ "$IS_UPDATE" = true ]; then
+    echo "Stopping running services..."
+    $DOCKER_COMPOSE -f docker-compose.yaml down 2>/dev/null || true
+    echo ""
+fi
+
 echo "Downloading configuration files..."
 echo ""
 
