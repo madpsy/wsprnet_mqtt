@@ -90,15 +90,17 @@ BASE_URL="https://raw.githubusercontent.com/madpsy/wsprnet_mqtt/main"
 
 # Download docker-compose-hub.yaml as docker-compose.yaml (local name)
 echo "📥 Downloading docker-compose.yaml..."
-curl -fsSL "$BASE_URL/docker-compose-hub.yaml" -o docker-compose.yaml || {
+sudo curl -fsSL "$BASE_URL/docker-compose-hub.yaml" -o docker-compose.yaml || {
     echo "❌ Failed to download docker-compose.yaml"
     echo "Please check the URL or download manually"
     exit 1
 }
+sudo chown $USER:$USER docker-compose.yaml
 
-# Download mosquitto.conf
+# Download mosquitto.conf (may be owned by mosquitto container user)
 echo "📥 Downloading mosquitto.conf..."
-curl -fsSL "$BASE_URL/mosquitto.conf" -o mosquitto.conf
+sudo curl -fsSL "$BASE_URL/mosquitto.conf" -o mosquitto.conf
+sudo chown $USER:$USER mosquitto.conf
 
 # Download start.sh
 echo "📥 Downloading start.sh..."
