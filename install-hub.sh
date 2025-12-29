@@ -119,6 +119,42 @@ echo ""
 echo "✓ All files downloaded successfully"
 echo ""
 
+# Setup ubersdr_sdr-network (create if it doesn't exist)
+echo "Setting up ubersdr_sdr-network..."
+NETWORK_NAME="ubersdr_sdr-network"
+
+if docker network inspect $NETWORK_NAME >/dev/null 2>&1; then
+    echo "✓ $NETWORK_NAME already exists (shared with ka9q_ubersdr)"
+else
+    echo "Creating $NETWORK_NAME..."
+    if docker network create $NETWORK_NAME --subnet 172.20.0.0/16 2>/dev/null; then
+        echo "✓ $NETWORK_NAME created"
+    else
+        # Network creation failed, likely due to subnet overlap
+        # Check if there's an existing network with the same subnet
+        echo "⚠️  Network creation failed (subnet may overlap with existing network)"
+        echo "   Checking for existing networks on 172.20.0.0/16..."
+        
+        # Try to find any network using this subnet
+        EXISTING_NET=$(docker network ls --format '{{.Name}}' | while read net; do
+            if docker network inspect "$net" 2>/dev/null | grep -q "172.20.0.0/16"; then
+                echo "$net"
+                break
+            fi
+        done)
+        
+        if [ -n "$EXISTING_NET" ]; then
+            echo "   Found existing network: $EXISTING_NET"
+            echo "   This is likely from a previous installation or ka9q_ubersdr"
+            echo "   Continuing with existing network..."
+        else
+            echo "❌ Failed to create network and couldn't find existing one"
+            exit 1
+        fi
+    fi
+fi
+echo ""
+
 # Pull Docker images
 if [ "$IS_UPDATE" = true ]; then
     echo "Pulling latest Docker images..."
