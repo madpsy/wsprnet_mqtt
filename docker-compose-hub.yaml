@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  # Mosquitto MQTT Broker
+  mosquitto:
+    image: eclipse-mosquitto:latest
+    container_name: mosquitto
+    restart: unless-stopped
+    ports:
+      - "1883:1883"  # MQTT port
+      - "9001:9001"  # WebSocket port (optional)
+    volumes:
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-logs:/mosquitto/log
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf
+    networks:
+      - sdr-network
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-t", "$$SYS/#", "-C", "1", "-i", "healthcheck", "-W", "3"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+  # KiwiSDR WSPR Decoder (from Docker Hub)
+  kiwi-wspr:
+    image: madpsy/kiwi-wspr:latest
+    container_name: kiwi-wspr
+    restart: unless-stopped
+    ports:
+      - "8080:8080"  # Web interface
+    volumes:
+      - kiwi-wspr-data:/app/data
+    environment:
+      - TZ=UTC
+    networks:
+      - sdr-network
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # WSPR MQTT Aggregator (from Docker Hub)
+  wsprnet-mqtt:
+    image: madpsy/wsprnet-mqtt:latest
+    container_name: wsprnet-mqtt
+    restart: unless-stopped
+    ports:
+      - "9009:9009"  # Web interface
+    volumes:
+      - wsprnet-mqtt-data:/app/data
+    environment:
+      - TZ=UTC
+      # Uncomment to set custom admin password:
+      # - ADMIN_PASSWORD=your-secure-password-here
+    networks:
+      - sdr-network
+    depends_on:
+      mosquitto:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:9009/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 5s
+
+volumes:
+  mosquitto-data:
+    driver: local
+  mosquitto-logs:
+    driver: local
+  kiwi-wspr-data:
+    driver: local
+  wsprnet-mqtt-data:
+    driver: local
+
+networks:
+  sdr-network:
+    external: true
+    name: sdr-network

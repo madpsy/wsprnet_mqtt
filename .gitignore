@@ -1,0 +1,15 @@
+# Environment variables
+.env
+
+# Docker volumes and data
+mosquitto-data/
+mosquitto-logs/
+kiwi-wspr-data/
+wsprnet-mqtt-data/
+
+# Configuration files with sensitive data
+config-kiwi.yaml
+config-wsprnet.yaml
+
+# Docker Compose override files
+docker-compose.override.yml
