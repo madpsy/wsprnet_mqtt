@@ -142,7 +142,7 @@ docker-compose logs wsprnet-mqtt | grep "Generated random admin password"
 
 ### 3. Access the Web Interfaces
 
-- **KiwiSDR WSPR Decoder**: http://localhost:8080
+- **KiwiSDR WSPR Decoder**: http://localhost:8009
 - **WSPR MQTT Aggregator**: http://localhost:9009
 - **Mosquitto MQTT Broker**: Port 1883 (MQTT), Port 9001 (WebSocket)
 

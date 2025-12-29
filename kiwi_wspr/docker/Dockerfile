@@ -74,14 +74,14 @@ COPY docker/entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
 # Expose web interface port
-EXPOSE 8080
+EXPOSE 8009
 
 # Volume for configuration and data persistence
 VOLUME ["/app/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD wget --no-verbose --tries=1 --spider http://localhost:8080/ || exit 1
+    CMD wget --no-verbose --tries=1 --spider http://localhost:8009/ || exit 1
 
 # Run the application via entrypoint
 ENTRYPOINT ["/app/entrypoint.sh"]

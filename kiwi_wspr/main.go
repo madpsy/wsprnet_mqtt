@@ -34,7 +34,7 @@ func main() {
 
 		// WSPR decoder mode options
 		configFile = pflag.String("config", "config.yaml", "Configuration file for WSPR decoder mode")
-		webPort    = pflag.Int("web-port", 8080, "Web interface port")
+		webPort    = pflag.Int("web-port", 8009, "Web interface port")
 		webOnly    = pflag.Bool("web-only", false, "Run web interface only (no decoding)")
 		oneShot    = pflag.Bool("one-shot", false, "Record and decode one cycle then exit (keeps WAV files)")
 

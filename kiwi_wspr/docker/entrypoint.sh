@@ -163,4 +163,4 @@ fi
 cd /app/data
 
 # Execute the application with the config file (now using relative path since we're in /app/data)
-exec /app/kiwi_wspr --config config.yaml --web-port 8080 "$@"
+exec /app/kiwi_wspr --config config.yaml --web-port 8009 "$@"
