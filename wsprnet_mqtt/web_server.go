@@ -2795,10 +2795,25 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 const bestInstance = data.instances.reduce((best, inst) =>
                     inst.totalSpots > best.totalSpots ? inst : best
                 );
-                
+
                 // Calculate total unique spots across all instances
-                const totalUniqueAcrossAll = data.totalUnique;
-                
+                // This should be: total spots from all instances MINUS duplicates
+                // Duplicates are spots where multiple instances heard the same callsign
+                let bandDuplicateCountForGain = 0;
+                if (data.instances.length > 1) {
+                    data.instances.forEach(inst => {
+                        if (inst.duplicatesWith) {
+                            Object.values(inst.duplicatesWith).forEach(count => {
+                                bandDuplicateCountForGain += count;
+                            });
+                        }
+                    });
+                    bandDuplicateCountForGain = Math.round(bandDuplicateCountForGain / 2);
+                }
+
+                // Total unique = all spots minus duplicates
+                const totalUniqueAcrossAll = data.totalSpots - bandDuplicateCountForGain;
+
                 // Coverage gain = total unique / best single instance
                 const coverageGain = bestInstance.totalSpots > 0
                     ? totalUniqueAcrossAll / bestInstance.totalSpots
@@ -2835,7 +2850,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     winRate: inst.totalSpots > 0 ? (inst.bestSNRWins / inst.totalSpots) * 100 : 0
                 }));
                 
-                // Determine recommendation
+                // Determine recommendation based on both coverage gain AND overlap
                 let recommendation, recommendationColor, recommendationIcon;
                 if (data.instances.length === 1) {
                     recommendation = 'Single instance - no multi-instance analysis available';
@@ -2854,11 +2869,16 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     recommendationColor = '#f59e0b';
                     recommendationIcon = '⚠️';
                 } else if (coverageGain >= 1.05) {
-                    recommendation = 'Limited benefit. High overlap suggests redundancy - consider redeploying resources.';
-                    recommendationColor = '#f97316';
+                    recommendation = 'Limited benefit. Consider optimizing antenna placement or instance configuration.';
+                    recommendationColor = '#f59e0b';
+                    recommendationIcon = '⚠️';
+                } else if (overlapPercentage < 70) {
+                    // Even with low coverage gain, if overlap is reasonable, it's still providing some value
+                    recommendation = 'Modest benefit. Instances provide some additional coverage despite similar reception patterns.';
+                    recommendationColor = '#f59e0b';
                     recommendationIcon = '⚠️';
                 } else {
-                    recommendation = 'Minimal benefit. Instances are highly redundant - optimization recommended.';
+                    recommendation = 'High redundancy. Instances are hearing mostly the same signals - consider repositioning.';
                     recommendationColor = '#ef4444';
                     recommendationIcon = '❌';
                 }
