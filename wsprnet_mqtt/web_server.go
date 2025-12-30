@@ -2805,12 +2805,27 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     : 1.0;
                 
                 // Calculate overlap for this specific band
-                // Overlap = spots that were duplicates (heard by multiple instances in same window)
-                // For single instance, this is always 0 (no other instance to duplicate with)
-                // For multiple instances, count spots where TotalSpots > UniqueSpots
-                const totalDuplicatesThisBand = data.totalSpots - data.totalUnique;
+                // Overlap = percentage of spots where multiple instances heard the same callsign
+                // in the same 2-minute window (tracked via DuplicatesWith relationships)
+                let bandDuplicateCount = 0;
+
+                // For single instance, there can be no duplicates (no other instance to duplicate with)
+                if (data.instances.length > 1) {
+                    // Sum up all duplicate relationships for this band
+                    // DuplicatesWith is counted from both sides, so divide by 2
+                    data.instances.forEach(inst => {
+                        if (inst.duplicatesWith) {
+                            Object.values(inst.duplicatesWith).forEach(count => {
+                                bandDuplicateCount += count;
+                            });
+                        }
+                    });
+                    // Divide by 2 since each duplicate is counted from both instances
+                    bandDuplicateCount = Math.round(bandDuplicateCount / 2);
+                }
+
                 const overlapPercentage = data.totalSpots > 0
-                    ? (totalDuplicatesThisBand / data.totalSpots) * 100
+                    ? (bandDuplicateCount / data.totalSpots) * 100
                     : 0;
                 
                 // Calculate unique contribution percentage for each instance
