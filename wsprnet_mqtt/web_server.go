@@ -2848,16 +2848,18 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 const overlapPercentage = data.totalSpots > 0
                     ? (bandDuplicateCount / data.totalSpots) * 100
                     : 0;
+                // Calculate total SNR wins across all instances for proper percentage calculation
+                const totalSNRWins = data.instances.reduce((sum, inst) => sum + inst.bestSNRWins, 0);
+
                 
                 // Calculate unique contribution percentage for each instance
-                // SNR Win Rate should be: bestSNRWins / (totalSpots - uniqueSpots)
-                // This shows what % of duplicates this instance won
+                // SNR Win Rate = (this instance's SNR wins / total SNR wins across all instances) * 100
+                // This shows what % of all duplicate resolutions this instance won
                 const instanceContributions = data.instances.map(inst => {
-                    const duplicateSpots = inst.totalSpots - inst.uniqueSpots;
                     return {
                         name: inst.name,
                         uniquePercent: inst.totalSpots > 0 ? (inst.uniqueSpots / inst.totalSpots) * 100 : 0,
-                        winRate: duplicateSpots > 0 ? (inst.bestSNRWins / duplicateSpots) * 100 : 0
+                        winRate: totalSNRWins > 0 ? (inst.bestSNRWins / totalSNRWins) * 100 : 0
                     };
                 });
                 
