@@ -567,6 +567,14 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
         <button class="btn btn-secondary" onclick="loadConfig()">🔄 Reload</button>
     </div>
 
+    <div class="container">
+        <h2 class="section-title">⚠️ Danger Zone</h2>
+        <p style="color: #94a3b8; margin-bottom: 20px;">
+            These actions cannot be undone. Use with caution.
+        </p>
+        <button class="btn btn-danger" onclick="clearAllStatistics()">🗑️ Delete All Statistics</button>
+    </div>
+
     <div class="back-link">
         <a href="/">← Back to Main Dashboard</a>
     </div>
@@ -870,6 +878,48 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 renderInstances();
             } catch (error) {
                 console.error('Failed to update MQTT status:', error);
+            }
+        }
+
+        // Clear all statistics
+        async function clearAllStatistics() {
+            // Show confirmation dialog with strong warning
+            if (!confirm('⚠️ WARNING: This will permanently delete ALL statistics!\n\n' +
+                         'This includes:\n' +
+                         '• All spot history\n' +
+                         '• Instance performance data\n' +
+                         '• SNR history\n' +
+                         '• Country statistics\n' +
+                         '• WSPRNet submission counts\n\n' +
+                         'This action CANNOT be undone!\n\n' +
+                         'Are you absolutely sure you want to continue?')) {
+                return;
+            }
+
+            // Second confirmation
+            if (!confirm('Are you REALLY sure? This will delete everything and start fresh.')) {
+                return;
+            }
+
+            try {
+                const response = await fetch('/admin/api/stats/clear', {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const result = await response.json();
+                showMessage('✅ ' + result.message + ' - Refreshing page...', 'success');
+
+                // Refresh the page after a short delay
+                setTimeout(() => {
+                    window.location.reload();
+                }, 2000);
+            } catch (error) {
+                showMessage('❌ Failed to clear statistics: ' + error.message, 'error');
             }
         }
 

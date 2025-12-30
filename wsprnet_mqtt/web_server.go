@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -58,6 +59,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/admin/dashboard", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleAdminDashboard))
 	http.HandleFunc("/admin/api/config", ws.adminHandler.AuthMiddleware(ws.handleAdminAPI))
 	http.HandleFunc("/admin/api/mqtt/test", ws.adminHandler.AuthMiddleware(ws.handleMQTTTest))
+	http.HandleFunc("/admin/api/stats/clear", ws.adminHandler.AuthMiddleware(ws.handleClearStats))
 	http.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)
 	})
@@ -313,6 +315,67 @@ func (ws *WebServer) handleMQTTTest(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
+}
+
+// handleClearStats clears all statistics from memory and disk
+func (ws *WebServer) handleClearStats(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Admin: Clearing all statistics")
+
+	// Clear statistics from memory
+	ws.stats.ClearAllStatistics()
+
+	// Clear the persistence file by writing an empty/initial state
+	if ws.config.PersistenceFile != "" {
+		emptyStats := &PersistenceData{
+			SavedAt:      time.Now(),
+			Windows:      make([]*WindowStats, 0),
+			Instances:    make(map[string]*InstanceStats),
+			CountryStats: make(map[string]*CountryStatsExport),
+			MapSpots:     make(map[string]*SpotLocation),
+			SNRHistory:   make(map[string]map[string][]SNRHistoryPoint),
+			TotalStats: OverallStats{
+				TotalSubmitted:  0,
+				TotalDuplicates: 0,
+				TotalUnique:     0,
+			},
+			WSPRNetStats: WSPRNetStats{
+				Successful: 0,
+				Failed:     0,
+				Retries:    0,
+			},
+		}
+
+		data, err := json.MarshalIndent(emptyStats, "", "  ")
+		if err != nil {
+			log.Printf("Error marshaling empty stats: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to clear statistics file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		if err := os.WriteFile(ws.config.PersistenceFile, data, 0644); err != nil {
+			log.Printf("Error writing empty stats file: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to clear statistics file: %v", err), http.StatusInternalServerError)
+			return
+		}
+
+		log.Printf("Statistics file cleared: %s", ws.config.PersistenceFile)
+	}
+
+	// Also reset WSPRNet stats
+	ws.wsprnet.ResetStats()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "All statistics have been cleared successfully",
+	})
+
+	log.Println("Admin: All statistics cleared successfully")
 }
 
 // handleDashboard serves the HTML dashboard
@@ -893,7 +956,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
     <!-- End Countries Tab -->
 
     <div class="last-update">
-        Last updated: <span id="lastUpdate">-</span> | Auto-refresh every 120 seconds
+        Last updated: <span id="lastUpdate">-</span> | Auto-refresh every 120 seconds | <a href="/admin" style="color: #60a5fa; text-decoration: none;">⚙️ Admin</a>
     </div>
 
     <script>
@@ -2741,10 +2804,25 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     ? totalUniqueAcrossAll / bestInstance.totalSpots
                     : 1.0;
                 
-                // Calculate average overlap (duplicates / total spots)
-                const totalDuplicates = data.totalSpots - totalUniqueAcrossAll;
-                const overlapPercentage = data.totalSpots > 0
-                    ? (totalDuplicates / data.totalSpots) * 100
+                // Calculate overlap: sum of actual duplicates within 2-minute windows
+                // (multiple instances hearing the same callsign in the same window)
+                // This is tracked per-window in DuplicateCount
+                let totalWindowDuplicates = 0;
+                let totalWindowSpots = 0;
+
+                // Sum up duplicates and spots from all windows in the 24-hour period
+                // Use the globally available rawWindowsData which contains all window stats
+                if (rawWindowsData && rawWindowsData.length > 0) {
+                    rawWindowsData.forEach(window => {
+                        totalWindowDuplicates += window.DuplicateCount || 0;
+                        totalWindowSpots += window.TotalSpots || 0;
+                    });
+                }
+
+                // Overlap = duplicates / total spots across all windows
+                // For a single instance, this will always be 0% (no duplicates possible)
+                const overlapPercentage = totalWindowSpots > 0
+                    ? (totalWindowDuplicates / totalWindowSpots) * 100
                     : 0;
                 
                 // Calculate unique contribution percentage for each instance

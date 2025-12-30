@@ -25,20 +25,20 @@ type InstanceStats struct {
 
 // BandInstanceStats tracks per-band statistics for an instance
 type BandInstanceStats struct {
-	TotalSpots      int                `json:"TotalSpots"`
-	UniqueSpots     int                `json:"UniqueSpots"`
-	BestSNRWins     int                `json:"BestSNRWins"`
-	TiedSNR         int                `json:"TiedSNR"`
-	TiedWith        map[string]int     `json:"TiedWith"`        // instance name -> tie count
-	DuplicatesWith  map[string]int     `json:"DuplicatesWith"`  // instance name -> duplicate count (all duplicates, not just ties)
-	AverageSNR      float64            `json:"AverageSNR"`
-	TotalSNR        int                `json:"TotalSNR"`
-	SNRCount        int                `json:"SNRCount"`
-	MinDistance     float64            `json:"MinDistance"`     // km
-	MaxDistance     float64            `json:"MaxDistance"`     // km
-	TotalDistance   float64            `json:"TotalDistance"`   // km
-	DistanceCount   int                `json:"DistanceCount"`   // number of spots with valid distance
-	AverageDistance float64            `json:"AverageDistance"` // km
+	TotalSpots      int            `json:"TotalSpots"`
+	UniqueSpots     int            `json:"UniqueSpots"`
+	BestSNRWins     int            `json:"BestSNRWins"`
+	TiedSNR         int            `json:"TiedSNR"`
+	TiedWith        map[string]int `json:"TiedWith"`       // instance name -> tie count
+	DuplicatesWith  map[string]int `json:"DuplicatesWith"` // instance name -> duplicate count (all duplicates, not just ties)
+	AverageSNR      float64        `json:"AverageSNR"`
+	TotalSNR        int            `json:"TotalSNR"`
+	SNRCount        int            `json:"SNRCount"`
+	MinDistance     float64        `json:"MinDistance"`     // km
+	MaxDistance     float64        `json:"MaxDistance"`     // km
+	TotalDistance   float64        `json:"TotalDistance"`   // km
+	DistanceCount   int            `json:"DistanceCount"`   // number of spots with valid distance
+	AverageDistance float64        `json:"AverageDistance"` // km
 }
 
 // CountryStats tracks statistics for a country on a specific band
@@ -550,7 +550,7 @@ func (st *StatisticsTracker) RecordTiedSNR(instanceName, band, tiedWithInstance 
 func (st *StatisticsTracker) RecordDuplicate(instanceName, band, duplicateWithInstance string) {
 	st.instancesMu.Lock()
 	defer st.instancesMu.Unlock()
-	
+
 	if st.instances[instanceName] != nil {
 		if st.instances[instanceName].BandStats[band] != nil {
 			// Track which instance this one had a duplicate with
@@ -714,13 +714,13 @@ func (st *StatisticsTracker) GetInstanceStats() map[string]*InstanceStats {
 			for k, v := range stats.TiedWith {
 				tiedWithCopy[k] = v
 			}
-			
+
 			// Copy DuplicatesWith map
 			duplicatesWithCopy := make(map[string]int)
 			for k, v := range stats.DuplicatesWith {
 				duplicatesWithCopy[k] = v
 			}
-			
+
 			instanceCopy.BandStats[band] = &BandInstanceStats{
 				TotalSpots:      stats.TotalSpots,
 				UniqueSpots:     stats.UniqueSpots,
@@ -1168,4 +1168,42 @@ func (st *StatisticsTracker) GetInstancePerformanceRaw() map[string][]InstancePe
 	}
 
 	return result
+}
+
+// ClearAllStatistics clears all statistics from memory
+func (st *StatisticsTracker) ClearAllStatistics() {
+	st.instancesMu.Lock()
+	st.instances = make(map[string]*InstanceStats)
+	st.instancesMu.Unlock()
+
+	st.countryStatsMu.Lock()
+	st.countryStats = make(map[string]*CountryStats)
+	st.countryStatsMu.Unlock()
+
+	st.mapSpotsMu.Lock()
+	st.mapSpots = make(map[string]*SpotLocation)
+	st.mapSpotsMu.Unlock()
+
+	st.recentWindowsMu.Lock()
+	st.recentWindows = make([]*WindowStats, 0, 720)
+	st.recentWindowsMu.Unlock()
+
+	st.snrHistoryMu.Lock()
+	st.snrHistory = make(map[string]map[string][]SNRHistoryPoint)
+	st.snrHistoryMu.Unlock()
+
+	st.currentWindowSNRMu.Lock()
+	st.currentWindowSNR = make(map[string]*struct {
+		totalSNR, count, totalDistance int
+		distanceCount                  int
+	})
+	st.currentWindowSNRMu.Unlock()
+
+	st.statsMu.Lock()
+	st.totalSubmitted = 0
+	st.totalDuplicates = 0
+	st.totalUnique = 0
+	st.statsMu.Unlock()
+
+	log.Println("All statistics cleared from memory")
 }

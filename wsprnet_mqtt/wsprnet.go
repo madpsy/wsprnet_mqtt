@@ -366,3 +366,15 @@ func (w *WSPRNet) SetStats(successful, failed, retries int) {
 	w.countSendsErrored = failed
 	w.countRetries = retries
 }
+
+// ResetStats clears all statistics
+func (w *WSPRNet) ResetStats() {
+	w.statsMutex.Lock()
+	defer w.statsMutex.Unlock()
+
+	w.countSendsOK = 0
+	w.countSendsErrored = 0
+	w.countRetries = 0
+
+	log.Println("WSPRNet: Statistics reset to zero")
+}
