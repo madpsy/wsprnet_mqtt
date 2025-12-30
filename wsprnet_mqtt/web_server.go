@@ -2804,25 +2804,13 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     ? totalUniqueAcrossAll / bestInstance.totalSpots
                     : 1.0;
                 
-                // Calculate overlap: sum of actual duplicates within 2-minute windows
-                // (multiple instances hearing the same callsign in the same window)
-                // This is tracked per-window in DuplicateCount
-                let totalWindowDuplicates = 0;
-                let totalWindowSpots = 0;
-
-                // Sum up duplicates and spots from all windows in the 24-hour period
-                // Use the globally available rawWindowsData which contains all window stats
-                if (rawWindowsData && rawWindowsData.length > 0) {
-                    rawWindowsData.forEach(window => {
-                        totalWindowDuplicates += window.DuplicateCount || 0;
-                        totalWindowSpots += window.TotalSpots || 0;
-                    });
-                }
-
-                // Overlap = duplicates / total spots across all windows
-                // For a single instance, this will always be 0% (no duplicates possible)
-                const overlapPercentage = totalWindowSpots > 0
-                    ? (totalWindowDuplicates / totalWindowSpots) * 100
+                // Calculate overlap for this specific band
+                // Overlap = spots that were duplicates (heard by multiple instances in same window)
+                // For single instance, this is always 0 (no other instance to duplicate with)
+                // For multiple instances, count spots where TotalSpots > UniqueSpots
+                const totalDuplicatesThisBand = data.totalSpots - data.totalUnique;
+                const overlapPercentage = data.totalSpots > 0
+                    ? (totalDuplicatesThisBand / data.totalSpots) * 100
                     : 0;
                 
                 // Calculate unique contribution percentage for each instance
