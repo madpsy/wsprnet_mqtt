@@ -769,15 +769,15 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
     <div id="overview" class="tab-content active">
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-label">Successfully Sent</div>
+            <div class="stat-label">Successfully Sent (24h)</div>
             <div class="stat-value" id="successfulSent" style="color: #10b981;">-</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Failed (After Retries)</div>
+            <div class="stat-label">Failed (Lifetime)</div>
             <div class="stat-value" id="failedSent" style="color: #ef4444;">-</div>
         </div>
         <div class="stat-card">
-            <div class="stat-label">Duplicates Removed</div>
+            <div class="stat-label">Duplicates Removed (24h)</div>
             <div class="stat-value" id="totalDuplicates">-</div>
         </div>
         <div class="stat-card">
@@ -1378,9 +1378,20 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         }
 
         function updateStats(stats, aggregator, wsprnet) {
-            document.getElementById('successfulSent').textContent = wsprnet.successful || 0;
+            // Calculate 24-hour rolling window stats from rawWindowsData
+            let rolling24hSent = 0;
+            let rolling24hDuplicates = 0;
+
+            if (rawWindowsData && rawWindowsData.length > 0) {
+                rawWindowsData.forEach(window => {
+                    rolling24hSent += window.TotalSpots || 0;
+                    rolling24hDuplicates += window.DuplicateCount || 0;
+                });
+            }
+
+            document.getElementById('successfulSent').textContent = rolling24hSent;
             document.getElementById('failedSent').textContent = wsprnet.failed || 0;
-            document.getElementById('totalDuplicates').textContent = stats.total_duplicates || 0;
+            document.getElementById('totalDuplicates').textContent = rolling24hDuplicates;
             document.getElementById('pendingSpots').textContent = aggregator.pending_spots || 0;
         }
 
