@@ -2759,7 +2759,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
             // Collect per-band analysis data
             const bandAnalysis = {};
-            
+
             // Organize data by band
             Object.values(instances).forEach(inst => {
                 Object.entries(inst.BandStats || {}).forEach(([band, stats]) => {
@@ -2767,11 +2767,10 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         bandAnalysis[band] = {
                             instances: [],
                             totalSpots: 0,
-                            totalUnique: 0,
-                            totalDuplicates: 0
+                            uniqueCallsigns: new Set() // Track unique callsigns across all instances
                         };
                     }
-                    
+
                     bandAnalysis[band].instances.push({
                         name: inst.Name,
                         totalSpots: stats.TotalSpots,
@@ -2780,9 +2779,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         tiedSNR: stats.TiedSNR || 0,
                         duplicatesWith: stats.DuplicatesWith || {}
                     });
-                    
+
                     bandAnalysis[band].totalSpots += stats.TotalSpots;
-                    bandAnalysis[band].totalUnique += stats.UniqueSpots;
                 });
             });
 
@@ -2796,25 +2794,18 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     inst.totalSpots > best.totalSpots ? inst : best
                 );
 
-                // Calculate total unique spots across all instances
-                // This should be: total spots from all instances MINUS duplicates
-                // Duplicates are spots where multiple instances heard the same callsign
-                let bandDuplicateCountForGain = 0;
-                if (data.instances.length > 1) {
-                    data.instances.forEach(inst => {
-                        if (inst.duplicatesWith) {
-                            Object.values(inst.duplicatesWith).forEach(count => {
-                                bandDuplicateCountForGain += count;
-                            });
-                        }
-                    });
-                    bandDuplicateCountForGain = Math.round(bandDuplicateCountForGain / 2);
-                }
-
-                // Total unique = all spots minus duplicates
-                const totalUniqueAcrossAll = data.totalSpots - bandDuplicateCountForGain;
+                // Calculate total unique callsigns across all instances
+                // Total unique = best instance spots + unique spots from all other instances
+                // (UniqueSpots = callsigns ONLY that instance heard, not heard by others)
+                let totalUniqueAcrossAll = bestInstance.totalSpots;
+                data.instances.forEach(inst => {
+                    if (inst.name !== bestInstance.name) {
+                        totalUniqueAcrossAll += inst.uniqueSpots;
+                    }
+                });
 
                 // Coverage gain = total unique / best single instance
+                // This shows how much additional coverage you get from running multiple instances
                 const coverageGain = bestInstance.totalSpots > 0
                     ? totalUniqueAcrossAll / bestInstance.totalSpots
                     : 1.0;
