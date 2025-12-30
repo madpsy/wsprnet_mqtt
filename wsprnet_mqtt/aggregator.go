@@ -413,7 +413,7 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 
 			for _, callsign := range callsigns {
 				dupReports := dups[callsign]
-				
+
 				// Find the winning report for this callsign
 				var winner *WSPRReportWithSource
 				for _, report := range reports {
@@ -422,7 +422,7 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 						break
 					}
 				}
-				
+
 				if winner != nil {
 					log.Printf("    %s: %d duplicate(s) - Winner: [%s] SNR: %d dB",
 						callsign, len(dupReports), winner.InstanceName, winner.SNR)
@@ -442,8 +442,8 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 
 	log.Println("================================================================================")
 
-	// Finish statistics window
-	sa.stats.FinishWindow(len(spots), totalDuplicates, bandBreakdown)
+	// Finish statistics window (pass 0 for failed count since failures are tracked separately by WSPRNet)
+	sa.stats.FinishWindow(len(spots), totalDuplicates, 0, bandBreakdown)
 
 	// Save statistics to disk if persistence is enabled
 	if sa.persistenceFile != "" {

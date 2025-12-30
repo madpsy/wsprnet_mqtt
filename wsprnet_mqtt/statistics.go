@@ -66,6 +66,7 @@ type WindowStats struct {
 	WindowTime        time.Time
 	TotalSpots        int
 	DuplicateCount    int
+	FailedCount       int                 // number of spots that failed to submit
 	UniqueByInstance  map[string][]string // instance -> callsigns unique to that instance
 	BestSNRByInstance map[string]int      // instance -> count of best SNR wins
 	TiedSNRByInstance map[string]int      // instance -> count of tied SNR
@@ -563,13 +564,14 @@ func (st *StatisticsTracker) RecordDuplicate(instanceName, band, duplicateWithIn
 }
 
 // FinishWindow completes the current window and adds it to history
-func (st *StatisticsTracker) FinishWindow(totalSpots, duplicates int, bandBreakdown map[string]int) {
+func (st *StatisticsTracker) FinishWindow(totalSpots, duplicates, failed int, bandBreakdown map[string]int) {
 	st.currentWindowMu.Lock()
 	if st.currentWindow != nil {
 		windowTime := st.currentWindow.WindowTime
 
 		st.currentWindow.TotalSpots = totalSpots
 		st.currentWindow.DuplicateCount = duplicates
+		st.currentWindow.FailedCount = failed
 		st.currentWindow.BandBreakdown = bandBreakdown
 		st.currentWindow.SubmittedAt = time.Now()
 

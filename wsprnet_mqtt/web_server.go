@@ -769,16 +769,16 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
     <div id="overview" class="tab-content active">
     <div class="stats-grid">
         <div class="stat-card">
-            <div class="stat-label">Successfully Sent (24h)</div>
+            <div class="stat-label">Spots Sent (24h)</div>
             <div class="stat-value" id="successfulSent" style="color: #10b981;">-</div>
-        </div>
-        <div class="stat-card">
-            <div class="stat-label">Failed (Lifetime)</div>
-            <div class="stat-value" id="failedSent" style="color: #ef4444;">-</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Duplicates Removed (24h)</div>
             <div class="stat-value" id="totalDuplicates">-</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Failed Submissions (24h)</div>
+            <div class="stat-value" id="failedSent" style="color: #ef4444;">-</div>
         </div>
         <div class="stat-card">
             <div class="stat-label">Pending Spots</div>
@@ -1357,8 +1357,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     fetch('/api/instance-performance-raw').then(r => r.json())
                 ]);
 
-                updateStats(stats, aggregator, wsprnet);
                 updateCharts(windows);
+                updateStats(stats, aggregator, wsprnet);
                 updateInstanceComparisonChart(instances);
                 updateInstanceTable(instances);
                 updateInstancePerformanceRawChart(instancePerformanceRaw);
@@ -1381,16 +1381,18 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             // Calculate 24-hour rolling window stats from rawWindowsData
             let rolling24hSent = 0;
             let rolling24hDuplicates = 0;
+            let rolling24hFailed = 0;
 
             if (rawWindowsData && rawWindowsData.length > 0) {
                 rawWindowsData.forEach(window => {
                     rolling24hSent += window.TotalSpots || 0;
                     rolling24hDuplicates += window.DuplicateCount || 0;
+                    rolling24hFailed += window.FailedCount || 0;
                 });
             }
 
             document.getElementById('successfulSent').textContent = rolling24hSent;
-            document.getElementById('failedSent').textContent = wsprnet.failed || 0;
+            document.getElementById('failedSent').textContent = rolling24hFailed;
             document.getElementById('totalDuplicates').textContent = rolling24hDuplicates;
             document.getElementById('pendingSpots').textContent = aggregator.pending_spots || 0;
         }
