@@ -603,7 +603,7 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
 
         let mqttStatus = null;
 
-        function renderInstances() {
+        function renderInstances(forceRebuild = false) {
             const container = document.getElementById('instanceList');
             
             if (!config.mqtt.instances || config.mqtt.instances.length === 0) {
@@ -611,18 +611,25 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 return;
             }
             
-            // Only rebuild if container is empty (first render)
-            if (container.children.length === 0) {
+            // Rebuild if forced or container is empty (first render)
+            if (forceRebuild || container.children.length === 0) {
+                container.innerHTML = '';
                 config.mqtt.instances.forEach((instance, index) => {
                     const div = document.createElement('div');
                     div.className = 'instance-item';
                     div.id = 'instance-' + index;
+                    
+                    // Get current message count if available
+                    const msgCount = (mqttStatus && mqttStatus.instance_counts)
+                        ? (mqttStatus.instance_counts[instance.name] || 0).toLocaleString()
+                        : '0';
+                    
                     div.innerHTML = ` + "`" + `
                         <div class="instance-info">
                             <div class="instance-name">${instance.name}</div>
                             <div class="instance-prefix">Topic Prefix: ${instance.topic_prefix}</div>
                             <div class="instance-prefix" style="color: #60a5fa; margin-top: 5px;">
-                                Messages: <span id="msg-count-${index}">0</span>
+                                Messages: <span id="msg-count-${index}">${msgCount}</span>
                             </div>
                         </div>
                         <div>
@@ -660,7 +667,7 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 topic_prefix: topicPrefix
             });
             
-            renderInstances();
+            renderInstances(true);
         }
 
         function editInstance(index) {
@@ -677,14 +684,14 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 topic_prefix: topicPrefix
             };
             
-            renderInstances();
+            renderInstances(true);
         }
 
         function deleteInstance(index) {
             if (!confirm('Are you sure you want to delete this instance?')) return;
             
             config.mqtt.instances.splice(index, 1);
-            renderInstances();
+            renderInstances(true);
         }
 
         async function saveConfig() {
