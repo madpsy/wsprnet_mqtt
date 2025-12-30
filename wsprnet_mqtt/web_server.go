@@ -2850,43 +2850,57 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     : 0;
                 
                 // Calculate unique contribution percentage for each instance
-                const instanceContributions = data.instances.map(inst => ({
-                    name: inst.name,
-                    uniquePercent: inst.totalSpots > 0 ? (inst.uniqueSpots / inst.totalSpots) * 100 : 0,
-                    winRate: inst.totalSpots > 0 ? (inst.bestSNRWins / inst.totalSpots) * 100 : 0
-                }));
+                // SNR Win Rate should be: bestSNRWins / (totalSpots - uniqueSpots)
+                // This shows what % of duplicates this instance won
+                const instanceContributions = data.instances.map(inst => {
+                    const duplicateSpots = inst.totalSpots - inst.uniqueSpots;
+                    return {
+                        name: inst.name,
+                        uniquePercent: inst.totalSpots > 0 ? (inst.uniqueSpots / inst.totalSpots) * 100 : 0,
+                        winRate: duplicateSpots > 0 ? (inst.bestSNRWins / duplicateSpots) * 100 : 0
+                    };
+                });
                 
-                // Determine recommendation based on both coverage gain AND overlap
+                // Determine recommendation based on coverage gain, overlap, and individual instance contributions
                 let recommendation, recommendationColor, recommendationIcon;
                 if (data.instances.length === 1) {
                     recommendation = 'Single instance - no multi-instance analysis available';
                     recommendationColor = '#94a3b8';
                     recommendationIcon = 'ℹ️';
-                } else if (coverageGain >= 1.5) {
-                    recommendation = 'Excellent diversity! Multiple instances provide significant coverage gain.';
-                    recommendationColor = '#10b981';
-                    recommendationIcon = '✅';
-                } else if (coverageGain >= 1.3) {
-                    recommendation = 'Good setup. Multiple instances provide valuable additional coverage.';
-                    recommendationColor = '#22c55e';
-                    recommendationIcon = '👍';
-                } else if (coverageGain >= 1.15) {
-                    recommendation = 'Moderate benefit. Consider optimizing weaker instances for better diversity.';
-                    recommendationColor = '#f59e0b';
-                    recommendationIcon = '⚠️';
-                } else if (coverageGain >= 1.05) {
-                    recommendation = 'Limited benefit. Consider optimizing antenna placement or instance configuration.';
-                    recommendationColor = '#f59e0b';
-                    recommendationIcon = '⚠️';
-                } else if (overlapPercentage < 70) {
-                    // Even with low coverage gain, if overlap is reasonable, it's still providing some value
-                    recommendation = 'Modest benefit. Instances provide some additional coverage despite similar reception patterns.';
-                    recommendationColor = '#f59e0b';
-                    recommendationIcon = '⚠️';
                 } else {
-                    recommendation = 'High redundancy. Instances are hearing mostly the same signals - consider repositioning.';
-                    recommendationColor = '#ef4444';
-                    recommendationIcon = '❌';
+                    // Check if any instance has very low unique contribution (<5%)
+                    const hasVeryLowContribution = instanceContributions.some(inst => inst.uniquePercent < 5.0);
+
+                    if (hasVeryLowContribution) {
+                        recommendation = 'High redundancy. One or more instances provide minimal unique coverage (<5%) - consider repositioning.';
+                        recommendationColor = '#ef4444';
+                        recommendationIcon = '❌';
+                    } else if (coverageGain >= 1.5) {
+                        recommendation = 'Excellent diversity! Multiple instances provide significant coverage gain.';
+                        recommendationColor = '#10b981';
+                        recommendationIcon = '✅';
+                    } else if (coverageGain >= 1.3) {
+                        recommendation = 'Good setup. Multiple instances provide valuable additional coverage.';
+                        recommendationColor = '#22c55e';
+                        recommendationIcon = '👍';
+                    } else if (coverageGain >= 1.15) {
+                        recommendation = 'Moderate benefit. Consider optimizing weaker instances for better diversity.';
+                        recommendationColor = '#f59e0b';
+                        recommendationIcon = '⚠️';
+                    } else if (coverageGain >= 1.05) {
+                        recommendation = 'Limited benefit. Consider optimizing antenna placement or instance configuration.';
+                        recommendationColor = '#f59e0b';
+                        recommendationIcon = '⚠️';
+                    } else if (overlapPercentage < 70) {
+                        // Even with low coverage gain, if overlap is reasonable, it's still providing some value
+                        recommendation = 'Modest benefit. Instances provide some additional coverage despite similar reception patterns.';
+                        recommendationColor = '#f59e0b';
+                        recommendationIcon = '⚠️';
+                    } else {
+                        recommendation = 'High redundancy. Instances are hearing mostly the same signals - consider repositioning.';
+                        recommendationColor = '#ef4444';
+                        recommendationIcon = '❌';
+                    }
                 }
                 
                 bandMetrics[band] = {
