@@ -495,6 +495,18 @@ function duplicateBand(idx) {
             value: otherInstances[0]
         }
     ], (values) => {
+        // Check if target instance already has a band with this frequency
+        const existingBand = config.WSPRBands?.find(b =>
+            b.Instance === values.instance && b.Frequency === band.Frequency
+        );
+
+        if (existingBand) {
+            showAlertModal('Cannot Duplicate Band',
+                `❌ Instance "${values.instance}" already has a band with frequency ${band.Frequency} kHz (${existingBand.Name}). Cannot duplicate.`
+            );
+            return;
+        }
+
         if (!config.WSPRBands) config.WSPRBands = [];
         config.WSPRBands.push({
             Name: band.Name,

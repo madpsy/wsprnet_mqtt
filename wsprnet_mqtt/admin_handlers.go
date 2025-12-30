@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -183,6 +184,99 @@ func (ah *AdminHandler) HandleUpdateConfig(w http.ResponseWriter, r *http.Reques
 	go func() {
 		time.Sleep(2 * time.Second)
 		log.Println("Exiting application for restart after config update")
+		os.Exit(0)
+	}()
+}
+
+// HandleExportConfig exports the current configuration as a YAML file
+func (ah *AdminHandler) HandleExportConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Read the config file
+	data, err := os.ReadFile(ah.configFile)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read config file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Set headers for file download
+	w.Header().Set("Content-Type", "application/x-yaml")
+	w.Header().Set("Content-Disposition", "attachment; filename=config.yaml")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+
+	// Write the file content
+	if _, err := w.Write(data); err != nil {
+		log.Printf("Error writing config export: %v", err)
+	}
+}
+
+// HandleImportConfig imports a configuration from an uploaded YAML file
+func (ah *AdminHandler) HandleImportConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse multipart form (10MB max)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse form: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Get the uploaded file
+	file, _, err := r.FormFile("config")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to get uploaded file: %v", err), http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	// Read file content
+	data, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to read uploaded file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Parse and validate the configuration
+	var newConfig Config
+	if err := yaml.Unmarshal(data, &newConfig); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to parse config file: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Validate new config
+	if err := newConfig.Validate(); err != nil {
+		http.Error(w, fmt.Sprintf("Invalid configuration: %v", err), http.StatusBadRequest)
+		return
+	}
+
+	// Save to file
+	if err := os.WriteFile(ah.configFile, data, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write config file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Update in-memory config
+	*ah.config = newConfig
+
+	log.Println("Configuration imported via admin interface - triggering application restart")
+
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Configuration imported successfully. Application will restart in 2 seconds...",
+	}); err != nil {
+		log.Printf("Error encoding import response: %v", err)
+	}
+
+	// Trigger application exit after a short delay to allow response to be sent
+	go func() {
+		time.Sleep(2 * time.Second)
+		log.Println("Exiting application for restart after config import")
 		os.Exit(0)
 	}()
 }
@@ -565,6 +659,8 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
     <div class="container">
         <button class="btn" onclick="saveConfig()">💾 Save Configuration</button>
         <button class="btn btn-secondary" onclick="loadConfig()">🔄 Reload</button>
+        <button class="btn btn-secondary" onclick="exportConfig()">📥 Export Config</button>
+        <button class="btn btn-secondary" onclick="importConfig()">📤 Import Config</button>
     </div>
 
     <div class="container">
@@ -921,6 +1017,76 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
             } catch (error) {
                 showMessage('❌ Failed to clear statistics: ' + error.message, 'error');
             }
+        }
+
+        // Export configuration to YAML file
+        async function exportConfig() {
+            try {
+                const response = await fetch('/admin/api/config/export');
+                if (!response.ok) {
+                    throw new Error('Failed to export configuration');
+                }
+
+                const blob = await response.blob();
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+
+                // Generate filename with timestamp
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                a.download = 'wsprnet-config-' + timestamp + '.yaml';
+
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                window.URL.revokeObjectURL(url);
+
+                showMessage('✅ Configuration exported successfully', 'success');
+            } catch (error) {
+                showMessage('❌ Failed to export configuration: ' + error.message, 'error');
+            }
+        }
+
+        // Import configuration from YAML file
+        function importConfig() {
+            // Create file input element
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.yaml,.yml,.json';
+
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+
+                // Show confirmation dialog
+                if (!confirm('⚠️ Warning: Importing a configuration will replace your current settings and restart the application.\\n\\nDo you want to continue?')) {
+                    return;
+                }
+
+                try {
+                    const formData = new FormData();
+                    formData.append('config', file);
+
+                    const response = await fetch('/admin/api/config/import', {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.text();
+                        throw new Error(error);
+                    }
+
+                    const result = await response.json();
+
+                    // Show countdown overlay
+                    showRestartCountdown();
+                } catch (error) {
+                    showMessage('❌ Failed to import configuration: ' + error.message, 'error');
+                }
+            };
+
+            input.click();
         }
 
         // Start status polling on page load

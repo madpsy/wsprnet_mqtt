@@ -58,6 +58,8 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/admin/logout", ws.adminHandler.HandleAdminLogout)
 	http.HandleFunc("/admin/dashboard", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleAdminDashboard))
 	http.HandleFunc("/admin/api/config", ws.adminHandler.AuthMiddleware(ws.handleAdminAPI))
+	http.HandleFunc("/admin/api/config/export", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleExportConfig))
+	http.HandleFunc("/admin/api/config/import", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleImportConfig))
 	http.HandleFunc("/admin/api/mqtt/test", ws.adminHandler.AuthMiddleware(ws.handleMQTTTest))
 	http.HandleFunc("/admin/api/stats/clear", ws.adminHandler.AuthMiddleware(ws.handleClearStats))
 	http.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
