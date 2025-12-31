@@ -416,6 +416,7 @@ function addInstance() {
 
 function editInstance(idx) {
     const inst = config.KiwiInstances[idx];
+    const oldName = inst.Name;
     showModal('Edit KiwiSDR Instance', [
         { id: 'name', label: 'Instance Name', value: inst.Name },
         { id: 'host', label: 'Host', value: inst.Host },
@@ -424,8 +425,11 @@ function editInstance(idx) {
         { id: 'password', label: 'Password (optional)', type: 'password', value: inst.Password },
         { id: 'mqtt_topic_prefix', label: 'MQTT Topic Prefix (optional - overrides global)', value: inst.MQTTTopicPrefix || '', placeholder: 'Leave empty to use global prefix' }
     ], (values) => {
+        const newName = values.name;
+        
+        // Update the instance
         config.KiwiInstances[idx] = {
-            Name: values.name,
+            Name: newName,
             Host: values.host,
             Port: parseInt(values.port),
             User: values.user,
@@ -433,6 +437,16 @@ function editInstance(idx) {
             MQTTTopicPrefix: values.mqtt_topic_prefix || '',
             Enabled: config.KiwiInstances[idx].Enabled !== undefined ? config.KiwiInstances[idx].Enabled : true
         };
+        
+        // If the name changed, update all bands associated with this instance
+        if (oldName !== newName && config.WSPRBands) {
+            config.WSPRBands.forEach(band => {
+                if (band.Instance === oldName) {
+                    band.Instance = newName;
+                }
+            });
+        }
+        
         updateInstancesAndBands();
     });
 }
