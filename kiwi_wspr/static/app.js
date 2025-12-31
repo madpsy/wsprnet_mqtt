@@ -186,6 +186,12 @@ function updateInstancesAndBands() {
             kiwiNameLine = `<div style="font-size: 12px; color: #888; margin-top: 3px; font-style: italic;">${kiwiStatus.name}</div>`;
         }
         
+        // Show antenna if available
+        let antennaLine = '';
+        if (kiwiStatus && !kiwiStatus.error && kiwiStatus.antenna) {
+            antennaLine = `<div style="font-size: 12px; color: #888; margin-top: 3px;">📡 Antenna: ${kiwiStatus.antenna}</div>`;
+        }
+        
         instanceHeader.innerHTML = `
             <div>
                 <h3 style="margin: 0; display: inline-block;">🌐 ${inst.Name}</h3>
@@ -196,6 +202,7 @@ function updateInstancesAndBands() {
                     ${statusLine}
                 </div>
                 ${kiwiNameLine}
+                ${antennaLine}
             </div>
             <div class="item-actions">
                 ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" onclick="showKiwiInfo('${inst.Name}')">Info</button>` : ''}
@@ -290,8 +297,9 @@ function updateInstancesAndBands() {
         disableAllBtn.textContent = '✗ Disable All Bands';
         disableAllBtn.onclick = () => disableAllBands(inst.Name);
         
-        // Disable buttons if instance is disabled or no bands
-        if (!inst.Enabled || instanceBands.length === 0) {
+        // Disable buttons based on instance state
+        if (!inst.Enabled) {
+            // If instance is disabled, disable all buttons
             addBandBtn.disabled = true;
             addBandBtn.style.opacity = '0.5';
             addBandBtn.style.cursor = 'not-allowed';
@@ -304,7 +312,19 @@ function updateInstancesAndBands() {
             disableAllBtn.style.opacity = '0.5';
             disableAllBtn.style.cursor = 'not-allowed';
         } else {
+            // Instance is enabled - allow adding bands
             addBandBtn.onclick = () => addBandToInstance(inst.Name);
+            
+            // Disable enable/disable all buttons only if there are no bands
+            if (instanceBands.length === 0) {
+                enableAllBtn.disabled = true;
+                enableAllBtn.style.opacity = '0.5';
+                enableAllBtn.style.cursor = 'not-allowed';
+                
+                disableAllBtn.disabled = true;
+                disableAllBtn.style.opacity = '0.5';
+                disableAllBtn.style.cursor = 'not-allowed';
+            }
         }
         
         buttonContainer.appendChild(addBandBtn);
@@ -775,6 +795,12 @@ function updateInstanceHeaders() {
             kiwiNameLine = `<div style="font-size: 12px; color: #888; margin-top: 3px; font-style: italic;">${kiwiStatus.name}</div>`;
         }
         
+        // Show antenna if available
+        let antennaLine = '';
+        if (kiwiStatus && !kiwiStatus.error && kiwiStatus.antenna) {
+            antennaLine = `<div style="font-size: 12px; color: #888; margin-top: 3px;">📡 Antenna: ${kiwiStatus.antenna}</div>`;
+        }
+        
         // Update only the header content
         instanceHeader.innerHTML = `
             <div>
@@ -786,6 +812,7 @@ function updateInstanceHeaders() {
                     ${statusLine}
                 </div>
                 ${kiwiNameLine}
+                ${antennaLine}
             </div>
             <div class="item-actions">
                 ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" onclick="showKiwiInfo('${inst.Name}')">Info</button>` : ''}
