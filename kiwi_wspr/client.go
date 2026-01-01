@@ -592,23 +592,29 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 	// Reset start time for new recording
 	c.startTime = time.Now()
 
-	// Immediately create the new WAV file to avoid race conditions
-	fullPath := fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
-	var err error
-	c.outputFile, err = os.Create(fullPath)
-	if err != nil {
-		return fmt.Errorf("failed to create output file: %w", err)
+	// If we have a sample rate, create the file immediately
+	// Otherwise, it will be created when first samples arrive
+	if c.sampleRate > 0 {
+		fullPath := fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
+		var err error
+		c.outputFile, err = os.Create(fullPath)
+		if err != nil {
+			return fmt.Errorf("failed to create output file: %w", err)
+		}
+
+		c.wavWriter = NewWAVWriter(c.outputFile, int(c.sampleRate), c.numChannels)
+		if err := c.wavWriter.WriteHeader(); err != nil {
+			c.outputFile.Close()
+			c.outputFile = nil
+			c.wavWriter = nil
+			return fmt.Errorf("failed to write WAV header: %w", err)
+		}
+
+		log.Printf("Started recording to: %s", fullPath)
+	} else {
+		log.Printf("Ready to start new WAV file: %s (waiting for sample rate)", filename)
 	}
 
-	c.wavWriter = NewWAVWriter(c.outputFile, int(c.sampleRate), c.numChannels)
-	if err := c.wavWriter.WriteHeader(); err != nil {
-		c.outputFile.Close()
-		c.outputFile = nil
-		c.wavWriter = nil
-		return fmt.Errorf("failed to write WAV header: %w", err)
-	}
-
-	log.Printf("Started recording to: %s", fullPath)
 	return nil
 }
 
