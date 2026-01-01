@@ -984,12 +984,6 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     </select>
                 </div>
                 <div>
-                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Band</label>
-                    <select id="spotBandFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
-                        <option value="">All Bands</option>
-                    </select>
-                </div>
-                <div>
                     <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Time Range</label>
                     <select id="spotTimeFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
                         <option value="1">Last 1 Hour</option>
@@ -1006,10 +1000,20 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         <option value="false">Failed to Send</option>
                     </select>
                 </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Search Callsign</label>
+                    <input type="text" id="spotCallsignSearch" placeholder="Filter by callsign..." style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                </div>
             </div>
-            <div style="display: flex; gap: 10px;">
+            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <button class="control-btn" onclick="loadSpots()">🔄 Refresh</button>
                 <button class="control-btn" onclick="exportSpots()">💾 Export CSV</button>
+            </div>
+            
+            <!-- Band Filter Buttons -->
+            <div style="margin-top: 15px;">
+                <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 8px; font-weight: 600;">Band Filter:</div>
+                <div id="spotBandButtons" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
             </div>
         </div>
 
@@ -2482,6 +2486,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             
             let totalCallsigns = 0;
             let totalSpots = 0;
+            const uniqueCountries = new Set();
             let highestSNR = { value: -999, country: '', band: '' };
             let lowestSNR = { value: 999, country: '', band: '' };
             let mostCommonCountry = { country: '', callsigns: 0, band: '' };
@@ -2493,6 +2498,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 bandCountryCounts[band] = countryList.length;
                 
                 countryList.forEach(c => {
+                    uniqueCountries.add(c.country);
                     totalCallsigns += c.unique_callsigns;
                     totalSpots += c.total_spots;
                     
@@ -2565,6 +2571,11 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                             <div style="color: #64748b; font-size: 0.85em;">with activity</div>
                         </div>
                         <div>
+                            <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Total Countries</div>
+                            <div style="font-size: 1.8em; font-weight: bold; color: #60a5fa;">${uniqueCountries.size}</div>
+                            <div style="color: #64748b; font-size: 0.85em;">unique countries</div>
+                        </div>
+                        <div>
                             <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Total Callsigns</div>
                             <div style="font-size: 1.8em; font-weight: bold; color: #60a5fa;">${totalCallsigns}</div>
                             <div style="color: #64748b; font-size: 0.85em;">unique stations</div>
@@ -2605,12 +2616,28 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 // Sort by total spots descending (default)
                 countryList.sort((a, b) => b.total_spots - a.total_spots);
 
+                // Calculate unique countries and total callsigns for this band
+                const uniqueCountriesInBand = countryList.length;
+                const totalCallsignsInBand = countryList.reduce((sum, c) => sum + c.unique_callsigns, 0);
+
                 const tableId = ` + "`" + `countryTable_${band.replace(/[^a-zA-Z0-9]/g, '_')}` + "`" + `;
 
                 const bandId = 'country_' + band.replace(/[^a-zA-Z0-9]/g, '_');
                 const tableHTML = ` + "`" + `
                     <div id="${bandId}" style="margin-bottom: 30px;">
-                        <h3 style="color: #60a5fa; margin-bottom: 15px;">${band}</h3>
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                            <h3 style="color: #60a5fa; margin: 0;">${band}</h3>
+                            <div style="display: flex; gap: 20px; font-size: 0.9em;">
+                                <div style="text-align: right;">
+                                    <div style="color: #94a3b8; font-size: 0.85em;">Countries</div>
+                                    <div style="color: #10b981; font-weight: bold; font-size: 1.2em;">${uniqueCountriesInBand}</div>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="color: #94a3b8; font-size: 0.85em;">Callsigns</div>
+                                    <div style="color: #60a5fa; font-weight: bold; font-size: 1.2em;">${totalCallsignsInBand}</div>
+                                </div>
+                            </div>
+                        </div>
                         <table id="${tableId}" style="width: 100%;">
                             <thead>
                                 <tr>
@@ -3603,6 +3630,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     }
                 }
 
+                const bandColor = bandColors[spot.band] || '#f59e0b';
+                
                 return ` + "`" + `
                     <tr>
                         <td>${timestamp.toLocaleString()}</td>
@@ -3610,7 +3639,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         <td>${spot.locator}</td>
                         <td style="color: ${spot.snr >= 0 ? '#10b981' : '#ef4444'};">${spot.snr > 0 ? '+' : ''}${spot.snr} dB</td>
                         <td>${freqMHz} MHz</td>
-                        <td><span class="badge badge-warning">${spot.band}</span></td>
+                        <td><span class="badge" style="background: ${bandColor}; color: white;">${spot.band}</span></td>
                         <td>${spot.dbm} dBm</td>
                         <td>${spot.instance || '-'}</td>
                         <td>${statusHtml}</td>
@@ -3660,9 +3689,85 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             window.URL.revokeObjectURL(url);
         }
 
+        // Spots tab variables
+        let currentSpots = [];
+        let allLoadedSpots = [];
+        let spotSortColumn = 'timestamp';
+        let spotSortAscending = false;
+        let selectedSpotBand = 'all';
+
+        // Load spots data
+        async function loadSpots() {
+            const sourceFilter = document.getElementById('spotSourceFilter').value;
+            const timeFilter = parseInt(document.getElementById('spotTimeFilter').value);
+            const submittedFilter = document.getElementById('spotSubmittedFilter').value;
+
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - (timeFilter * 60 * 60 * 1000));
+
+            try {
+                let url;
+                const params = new URLSearchParams();
+                
+                params.append('start_time', startTime.toISOString());
+                params.append('end_time', endTime.toISOString());
+
+                if (sourceFilter === 'deduped') {
+                    if (submittedFilter) params.append('submitted', submittedFilter);
+                    url = '/api/spots/deduped?' + params.toString();
+                } else {
+                    params.append('instance', sourceFilter);
+                    url = '/api/spots/raw?' + params.toString();
+                }
+
+                const response = await fetch(url);
+                allLoadedSpots = await response.json();
+
+                filterAndDisplaySpots(sourceFilter === 'deduped');
+            } catch (error) {
+                console.error('Error loading spots:', error);
+                document.getElementById('spotsTableBody').innerHTML =
+                    '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #ef4444;">Error loading spots</td></tr>';
+            }
+        }
+
+        function filterAndDisplaySpots(isDeduped) {
+            const callsignSearch = document.getElementById('spotCallsignSearch').value.toUpperCase();
+            
+            let filtered = allLoadedSpots;
+            
+            if (selectedSpotBand && selectedSpotBand !== 'all') {
+                filtered = filtered.filter(spot => spot.band === selectedSpotBand);
+            }
+            
+            if (callsignSearch) {
+                filtered = filtered.filter(spot => spot.callsign.toUpperCase().includes(callsignSearch));
+            }
+            
+            currentSpots = filtered;
+            updateSpotsSummary(currentSpots, isDeduped);
+            displaySpots(currentSpots, isDeduped);
+        }
+
+        function setSpotBandFilter(band) {
+            selectedSpotBand = band;
+            
+            document.querySelectorAll('#spotBandButtons .filter-btn').forEach(btn => {
+                if (btn.dataset.band === band) {
+                    btn.classList.add('active');
+                    btn.classList.remove('inactive');
+                } else {
+                    btn.classList.remove('active');
+                    btn.classList.add('inactive');
+                }
+            });
+            
+            const sourceFilter = document.getElementById('spotSourceFilter').value;
+            filterAndDisplaySpots(sourceFilter === 'deduped');
+        }
+
         // Initialize spots tab
         async function initSpotsTab() {
-            // Load instance names
             try {
                 const instances = await fetch('/api/spots/instances').then(r => r.json());
                 const sourceSelect = document.getElementById('spotSourceFilter');
@@ -3677,34 +3782,44 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 console.error('Error loading instances:', error);
             }
 
-            // Populate band filter
-            const bandSelect = document.getElementById('spotBandFilter');
-            const bands = ['2200m', '630m', '160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
+            // Create band filter buttons
+            const bandButtonsContainer = document.getElementById('spotBandButtons');
+            const bands = ['all', '2200m', '630m', '160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
             bands.forEach(band => {
-                const option = document.createElement('option');
-                option.value = band;
-                option.textContent = band;
-                bandSelect.appendChild(option);
+                const btn = document.createElement('button');
+                btn.className = 'filter-btn' + (band === 'all' ? ' active' : ' inactive');
+                btn.dataset.band = band;
+                btn.textContent = band === 'all' ? 'All Bands' : band;
+                if (band !== 'all') {
+                    btn.style.borderColor = bandColors[band] || '#475569';
+                    btn.style.color = bandColors[band] || '#e2e8f0';
+                } else {
+                    btn.style.borderColor = '#60a5fa';
+                    btn.style.color = '#60a5fa';
+                }
+                btn.onclick = () => setSpotBandFilter(band);
+                bandButtonsContainer.appendChild(btn);
             });
 
-            // Add event listeners for filters
             document.getElementById('spotSourceFilter').addEventListener('change', () => {
-                // Show/hide submission status filter based on source
                 const sourceFilter = document.getElementById('spotSourceFilter').value;
                 const submittedFilter = document.getElementById('spotSubmittedFilter').parentElement;
                 submittedFilter.style.display = sourceFilter === 'deduped' ? 'block' : 'none';
                 loadSpots();
             });
-            document.getElementById('spotBandFilter').addEventListener('change', loadSpots);
             document.getElementById('spotTimeFilter').addEventListener('change', loadSpots);
             document.getElementById('spotSubmittedFilter').addEventListener('change', loadSpots);
+            
+            // Real-time callsign search
+            document.getElementById('spotCallsignSearch').addEventListener('input', () => {
+                const sourceFilter = document.getElementById('spotSourceFilter').value;
+                filterAndDisplaySpots(sourceFilter === 'deduped');
+            });
 
-            // Add sorting to table headers
             document.querySelectorAll('#spotsTable .sortable').forEach(header => {
                 header.addEventListener('click', function() {
                     const column = this.dataset.column;
                     
-                    // Toggle sort direction
                     if (spotSortColumn === column) {
                         spotSortAscending = !spotSortAscending;
                     } else {
@@ -3712,19 +3827,16 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         spotSortAscending = false;
                     }
 
-                    // Update header classes
                     document.querySelectorAll('#spotsTable .sortable').forEach(h => {
                         h.classList.remove('asc', 'desc');
                     });
                     this.classList.add(spotSortAscending ? 'asc' : 'desc');
 
-                    // Re-display with new sort
                     const sourceFilter = document.getElementById('spotSourceFilter').value;
                     displaySpots(currentSpots, sourceFilter === 'deduped');
                 });
             });
 
-            // Initial load
             loadSpots();
         }
 
