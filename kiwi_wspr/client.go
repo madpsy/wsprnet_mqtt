@@ -390,6 +390,13 @@ func (c *KiwiClient) IsReceivingData() bool {
 	return time.Since(lastTime) < 1*time.Second
 }
 
+// IsSampleRateReady returns true if the sample rate has been received from the server
+func (c *KiwiClient) IsSampleRateReady() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.sampleRate > 0
+}
+
 // splitKeyValue splits a string of key=value pairs
 func splitKeyValue(s string) map[string]string {
 	result := make(map[string]string)

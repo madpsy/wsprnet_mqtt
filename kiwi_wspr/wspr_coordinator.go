@@ -361,8 +361,18 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 
 	log.Printf("WSPR Coordinator: Starting recording to %s for %.0f seconds", baseFilename, duration.Seconds())
 
+	// Wait for sample rate to be received (up to 5 seconds)
+	// In persistent mode, sample rate should already be known, but check anyway
+	for i := 0; i < 50; i++ {
+		if client.IsSampleRateReady() {
+			break
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+
 	// Start new WAV file on existing connection
 	if err := client.StartNewWAVFile(baseFilename); err != nil {
+		log.Printf("WSPR Coordinator: Failed to start new WAV file: %v", err)
 		return "", fmt.Errorf("failed to start new WAV file: %w", err)
 	}
 
@@ -440,16 +450,23 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 		wc.mu.Unlock()
 
 		// Close WAV file but keep connection alive
+		log.Printf("WSPR Coordinator: Closing WAV file after %.0f seconds of recording", duration.Seconds())
 		wc.client.CloseWAVFile()
 	}
 
-	// Give a moment for file to be fully written
-	time.Sleep(100 * time.Millisecond)
+	// Give a moment for file to be fully written and flushed
+	time.Sleep(500 * time.Millisecond)
 
-	// Verify file was created
-	if _, err := os.Stat(fullPath); os.IsNotExist(err) {
+	// Verify file was created and check size
+	fileInfo, err := os.Stat(fullPath)
+	if os.IsNotExist(err) {
 		return "", fmt.Errorf("WAV file was not created: %s", fullPath)
 	}
+	if err != nil {
+		return "", fmt.Errorf("failed to stat WAV file: %w", err)
+	}
+
+	log.Printf("WSPR Coordinator: Recorded WAV file size: %.2f MB", float64(fileInfo.Size())/(1024*1024))
 
 	return fullPath, nil
 }
