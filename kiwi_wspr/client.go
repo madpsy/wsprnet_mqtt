@@ -416,6 +416,8 @@ func splitPreservingQuotes(s string, delim rune) []string {
 	for _, ch := range s {
 		if ch == '"' {
 			inQuotes = !inQuotes
+			// Keep the quotes in the output
+			current = append(current, ch)
 		} else if ch == delim && !inQuotes {
 			if len(current) > 0 {
 				result = append(result, string(current))
