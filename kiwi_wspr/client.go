@@ -264,10 +264,6 @@ func (c *KiwiClient) messageLoop() {
 
 // processTextMessage handles text messages from the server
 func (c *KiwiClient) processTextMessage(msg string) {
-	if !c.config.Quiet {
-		log.Printf("RX: %s", msg)
-	}
-
 	// Parse message and handle different types
 	if len(msg) < 3 {
 		return
@@ -281,16 +277,8 @@ func (c *KiwiClient) processTextMessage(msg string) {
 
 // handleMSG processes MSG type messages
 func (c *KiwiClient) handleMSG(body string) {
-	// Log all MSG messages for debugging
-	log.Printf("handleMSG called with body: %s", body)
-
 	// Parse key=value pairs separated by spaces
 	pairs := splitKeyValue(body)
-
-	log.Printf("Parsed %d key=value pairs from MSG", len(pairs))
-	for k := range pairs {
-		log.Printf("  Key found: %s", k)
-	}
 
 	for key, value := range pairs {
 		switch key {
@@ -348,18 +336,12 @@ func (c *KiwiClient) handleMSG(body string) {
 
 // parseUserCallback parses the user_cb JSON data containing active users
 func (c *KiwiClient) parseUserCallback(data string) {
-	// Always log that we received user_cb for debugging
-	log.Printf("Received user_cb message, data length: %d", len(data))
-	log.Printf("Raw user_cb data: %s", data)
-
 	// Parse JSON array directly - Go's json.Unmarshal handles URL-encoded strings automatically
 	var users []KiwiUser
 	if err := json.Unmarshal([]byte(data), &users); err != nil {
-		log.Printf("Failed to parse user_cb JSON: %v, data: %s", err, data)
+		log.Printf("Failed to parse user_cb JSON: %v", err)
 		return
 	}
-
-	log.Printf("Parsed %d total user slots from JSON", len(users))
 
 	// Filter out empty slots (users with only index field)
 	// A slot is active if it has a frequency (f field) set
@@ -368,9 +350,6 @@ func (c *KiwiClient) parseUserCallback(data string) {
 		// Check if user has meaningful data - frequency > 0 means active connection
 		if user.Frequency > 0 {
 			activeUsers = append(activeUsers, user)
-			log.Printf("Active user found: name=%s, freq=%d, location=%s", user.Name, user.Frequency, user.Location)
-		} else {
-			log.Printf("Skipping empty slot: index=%d, freq=%d", user.Index, user.Frequency)
 		}
 	}
 
@@ -378,8 +357,6 @@ func (c *KiwiClient) parseUserCallback(data string) {
 	c.usersMu.Lock()
 	c.activeUsers = activeUsers
 	c.usersMu.Unlock()
-
-	log.Printf("Stored %d active users (filtered from %d total slots)", len(activeUsers), len(users))
 }
 
 // GetActiveUsers returns the current list of active users

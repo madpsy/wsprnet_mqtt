@@ -926,10 +926,9 @@ function updateBandConnectionStatus() {
         const isReceivingData = bandStatus.receiving_data || false;
         const reconnectCount = bandStatus.reconnect_count || 0;
 
-        // Build reconnection badge if there have been reconnections
-        const reconnectBadge = reconnectCount > 0
-            ? ` <span class="status" style="background-color: #ff8c00; color: white; font-size: 11px; padding: 2px 6px;">🔄 ${reconnectCount}</span>`
-            : '';
+        // Build reconnection badge - always show it
+        const badgeColor = reconnectCount > 0 ? '#ff8c00' : '#28a745';
+        const reconnectBadge = ` <span class="status" style="background-color: ${badgeColor}; color: white; font-size: 11px; padding: 2px 6px;">🔄 ${reconnectCount}</span>`;
 
         // Update the badge
         if (isReceivingData) {
