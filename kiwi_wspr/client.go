@@ -38,22 +38,23 @@ type KiwiUser struct {
 
 // KiwiClient represents a connection to a KiwiSDR server
 type KiwiClient struct {
-	config        *Config
-	conn          *websocket.Conn
-	decoder       *IMAAdpcmDecoder
-	sampleRate    float64
-	numChannels   int
-	outputFile    *os.File
-	wavWriter     *WAVWriter
-	startTime     time.Time
-	stopChan      chan struct{}
-	mu            sync.Mutex
-	running       bool
-	kiwiVersion   float64
-	activeUsers   []KiwiUser
-	usersMu       sync.RWMutex
-	lastSNDTime   time.Time
-	lastSNDTimeMu sync.RWMutex
+	config          *Config
+	conn            *websocket.Conn
+	decoder         *IMAAdpcmDecoder
+	sampleRate      float64
+	numChannels     int
+	outputFile      *os.File
+	wavWriter       *WAVWriter
+	startTime       time.Time
+	stopChan        chan struct{}
+	mu              sync.Mutex
+	running         bool
+	kiwiVersion     float64
+	activeUsers     []KiwiUser
+	usersMu         sync.RWMutex
+	lastSNDTime     time.Time
+	lastSNDTimeMu   sync.RWMutex
+	recordingPaused bool // Prevents writeSamples from auto-creating files
 }
 
 // NewKiwiClient creates a new KiwiSDR client
@@ -518,6 +519,11 @@ func (c *KiwiClient) writeSamples(samples []int16) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Don't write if recording is paused (file intentionally closed)
+	if c.recordingPaused {
+		return
+	}
+
 	// Create output file if needed
 	if c.wavWriter == nil {
 		filename := c.getOutputFilename()
@@ -564,6 +570,9 @@ func (c *KiwiClient) CloseWAVFile() {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	// Pause recording to prevent writeSamples from recreating the file
+	c.recordingPaused = true
+
 	// Close WAV file
 	if c.wavWriter != nil {
 		c.wavWriter.Close()
@@ -575,7 +584,7 @@ func (c *KiwiClient) CloseWAVFile() {
 		c.outputFile = nil
 	}
 
-	log.Println("WAV file closed")
+	log.Println("WAV file closed (recording paused)")
 }
 
 // StartNewWAVFile starts recording to a new WAV file
@@ -583,7 +592,7 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	log.Printf("StartNewWAVFile called: %s (sampleRate=%.0f, wavWriter=%v)", filename, c.sampleRate, c.wavWriter != nil)
+	log.Printf("StartNewWAVFile called: %s (sampleRate=%.0f, wavWriter=%v, paused=%v)", filename, c.sampleRate, c.wavWriter != nil, c.recordingPaused)
 
 	// Close any existing WAV file first
 	if c.wavWriter != nil {
@@ -603,6 +612,9 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 
 	// Reset start time for new recording
 	c.startTime = time.Now()
+
+	// Resume recording (allow writeSamples to write data)
+	c.recordingPaused = false
 
 	// CRITICAL: In persistent recording mode, we MUST create the file immediately
 	// to avoid race conditions with incoming audio samples
