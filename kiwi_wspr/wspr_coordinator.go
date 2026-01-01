@@ -193,18 +193,18 @@ func (wc *WSPRCoordinator) recordingLoop() {
 		wavFile, err := wc.recordCycle(cycleStart)
 		if err != nil {
 			log.Printf("WSPR Coordinator: Recording error: %v", err)
-			
+
 			// Track recording failure
 			wc.mu.Lock()
 			wc.recordingState = RecordingStateFailed
 			wc.lastError = err.Error()
 			wc.mu.Unlock()
-			
+
 			// Wait a bit before retrying
 			time.Sleep(10 * time.Second)
 			continue
 		}
-		
+
 		// Track recording success
 		wc.mu.Lock()
 		wc.recordingState = RecordingStateSuccess
@@ -223,7 +223,7 @@ func (wc *WSPRCoordinator) recordingLoop() {
 				wc.lastDecodeTime = time.Now()
 				wc.lastDecodeCount = len(decodes)
 				wc.mu.Unlock()
-				
+
 				if len(decodes) > 0 {
 					log.Printf("WSPR Coordinator: Decoded %d spots from %s", len(decodes), timestamp.Format("15:04"))
 					// Publish to MQTT
@@ -303,7 +303,7 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time) (string, error) {
 	// Wait for the recording to complete (115 seconds)
 	// This ensures we stop before the next WSPR cycle starts
 	time.Sleep(115 * time.Second)
-	
+
 	// Close the client to ensure WAV file is flushed
 	if wc.client != nil {
 		wc.client.Close()
@@ -510,6 +510,19 @@ func (wc *WSPRCoordinator) GetStatus() (time.Time, int, RecordingState, string) 
 	wc.mu.Lock()
 	defer wc.mu.Unlock()
 	return wc.lastDecodeTime, wc.lastDecodeCount, wc.recordingState, wc.lastError
+}
+
+// GetActiveUsers returns the list of active users from the KiwiSDR connection
+func (wc *WSPRCoordinator) GetActiveUsers() []KiwiUser {
+	wc.mu.Lock()
+	client := wc.client
+	wc.mu.Unlock()
+
+	if client == nil {
+		return []KiwiUser{}
+	}
+
+	return client.GetActiveUsers()
 }
 
 // UpdateMQTTPublisher updates the MQTT publisher for this coordinator

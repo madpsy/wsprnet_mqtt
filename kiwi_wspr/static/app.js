@@ -175,9 +175,9 @@ function updateInstancesAndBands() {
         const kiwiStatus = kiwiStatusData[inst.Name];
         let statusLine = `${inst.Host}:${inst.Port} • User: ${inst.User}`;
         
-        // Add user count if available
+        // Add user count if available (make it clickable)
         if (kiwiStatus && !kiwiStatus.error && kiwiStatus.users && kiwiStatus.users_max) {
-            statusLine += ` • Users: (${kiwiStatus.users}/${kiwiStatus.users_max})`;
+            statusLine += ` • <span class="users-clickable" onclick="showUsersModal('${inst.Name}')">Users: (${kiwiStatus.users}/${kiwiStatus.users_max})</span>`;
         }
         
         // Show KiwiSDR name if available
@@ -800,7 +800,7 @@ function updateInstanceHeaders() {
         // Build status line
         let statusLine = `${inst.Host}:${inst.Port} • User: ${inst.User}`;
         if (kiwiStatus && !kiwiStatus.error && kiwiStatus.users && kiwiStatus.users_max) {
-            statusLine += ` • Users: (${kiwiStatus.users}/${kiwiStatus.users_max})`;
+            statusLine += ` • <span class="users-clickable" onclick="showUsersModal('${inst.Name}')">Users: (${kiwiStatus.users}/${kiwiStatus.users_max})</span>`;
         }
         
         // Show KiwiSDR name if available
@@ -850,6 +850,95 @@ function startStatusPolling() {
     setInterval(loadStatus, 10000);
     setInterval(loadKiwiStatus, 10000);
 }
+
+// Show users modal for a specific instance
+async function showUsersModal(instanceName) {
+    const modal = document.getElementById('users-modal');
+    const modalBody = document.getElementById('users-modal-body');
+    
+    // Show modal with loading message
+    modalBody.innerHTML = '<p>Loading active users...</p>';
+    modal.classList.add('show');
+    
+    try {
+        const response = await fetch('/api/kiwi/users');
+        const usersData = await response.json();
+        
+        // Get users for this instance
+        const users = usersData[instanceName] || [];
+        
+        if (users.length === 0) {
+            modalBody.innerHTML = `
+                <div style="text-align: center; padding: 20px; color: #666;">
+                    <p>No active users found for ${instanceName}</p>
+                    <p style="font-size: 0.9em; margin-top: 10px;">Users will appear here when connections are active.</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Build users display
+        let html = `<div class="user-instance">`;
+        html += `<h3>${instanceName} - ${users.length} Active User${users.length !== 1 ? 's' : ''}</h3>`;
+        
+        users.forEach(user => {
+            // URL decode the name and location
+            const name = decodeURIComponent(user.n || '(no identity)');
+            const location = decodeURIComponent(user.g || 'Unknown location');
+            const freqKHz = (user.f / 1000).toFixed(1);
+            const mode = user.m || 'N/A';
+            const time = user.t || 'N/A';
+            
+            html += `
+                <div class="user-card">
+                    <div class="user-card-header">
+                        <div>
+                            <div class="user-name">${name}</div>
+                            <div class="user-location">📍 ${location}</div>
+                        </div>
+                        ${user.rt === 1 ? '<span class="recording-badge">🔴 Recording</span>' : ''}
+                    </div>
+                    <div class="user-details">
+                        <div class="user-detail"><strong>Frequency:</strong> ${freqKHz} kHz</div>
+                        <div class="user-detail"><strong>Mode:</strong> ${mode.toUpperCase()}</div>
+                        <div class="user-detail"><strong>Connected:</strong> ${time}</div>
+                        ${user.rt === 1 ? `<div class="user-detail"><strong>Recording:</strong> ${user.rs || 'N/A'}</div>` : ''}
+                    </div>
+                </div>
+            `;
+        });
+        
+        html += `</div>`;
+        modalBody.innerHTML = html;
+        
+    } catch (error) {
+        console.error('Error loading users:', error);
+        modalBody.innerHTML = `
+            <div style="text-align: center; padding: 20px; color: #ef4444;">
+                <p>❌ Failed to load active users</p>
+                <p style="font-size: 0.9em; margin-top: 10px;">${error.message}</p>
+            </div>
+        `;
+    }
+}
+
+// Close users modal
+function closeUsersModal() {
+    const modal = document.getElementById('users-modal');
+    modal.classList.remove('show');
+}
+
+// Close modal when clicking outside
+document.addEventListener('DOMContentLoaded', () => {
+    const modal = document.getElementById('users-modal');
+    if (modal) {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                closeUsersModal();
+            }
+        });
+    }
+});
 
 // Load config and start status polling on page load
 loadConfig();

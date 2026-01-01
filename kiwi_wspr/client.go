@@ -2,15 +2,40 @@ package main
 
 import (
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/url"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/gorilla/websocket"
 )
+
+// KiwiUser represents a user connected to the KiwiSDR
+type KiwiUser struct {
+	Index         int     `json:"i"`
+	Name          string  `json:"n"`
+	Location      string  `json:"g"`
+	Frequency     int     `json:"f"`
+	Mode          string  `json:"m"`
+	Zoom          int     `json:"z"`
+	Waterfall     int     `json:"wf"`
+	FreqChange    int     `json:"fc"`
+	Time          string  `json:"t"`
+	Recording     int     `json:"rt"`
+	RecordNum     int     `json:"rn"`
+	RecordTime    string  `json:"rs"`
+	Extension     string  `json:"e"`
+	Antenna       string  `json:"a"`
+	Compression   float64 `json:"c"`
+	FreqOffset    float64 `json:"fo"`
+	ColorAnt      int     `json:"ca"`
+	NoiseCancel   int     `json:"nc"`
+	NoiseSubtract int     `json:"ns"`
+}
 
 // KiwiClient represents a connection to a KiwiSDR server
 type KiwiClient struct {
@@ -26,6 +51,8 @@ type KiwiClient struct {
 	mu          sync.Mutex
 	running     bool
 	kiwiVersion float64
+	activeUsers []KiwiUser
+	usersMu     sync.RWMutex
 }
 
 // NewKiwiClient creates a new KiwiSDR client
@@ -289,12 +316,63 @@ func (c *KiwiClient) handleMSG(body string) {
 					}
 				}
 			}()
+		case "user_cb":
+			// Parse user callback data (active users)
+			c.parseUserCallback(value)
 		case "audio_rate":
 			// Handle audio rate
 		case "version_maj":
 			// Handle version
 		}
 	}
+}
+
+// parseUserCallback parses the user_cb JSON data containing active users
+func (c *KiwiClient) parseUserCallback(data string) {
+	// URL decode the data
+	decoded := strings.ReplaceAll(data, "%20", " ")
+	decoded = strings.ReplaceAll(decoded, "%28", "(")
+	decoded = strings.ReplaceAll(decoded, "%29", ")")
+	decoded = strings.ReplaceAll(decoded, "%2C", ",")
+	decoded = strings.ReplaceAll(decoded, "%2c", ",")
+
+	// Parse JSON array
+	var users []KiwiUser
+	if err := json.Unmarshal([]byte(decoded), &users); err != nil {
+		if !c.config.Quiet {
+			log.Printf("Failed to parse user_cb: %v", err)
+		}
+		return
+	}
+
+	// Filter out empty slots (users with only index field)
+	activeUsers := make([]KiwiUser, 0)
+	for _, user := range users {
+		// Check if user has meaningful data (not just an index)
+		if user.Name != "" || user.Frequency != 0 {
+			activeUsers = append(activeUsers, user)
+		}
+	}
+
+	// Store active users
+	c.usersMu.Lock()
+	c.activeUsers = activeUsers
+	c.usersMu.Unlock()
+
+	if !c.config.Quiet {
+		log.Printf("Active users: %d", len(activeUsers))
+	}
+}
+
+// GetActiveUsers returns the current list of active users
+func (c *KiwiClient) GetActiveUsers() []KiwiUser {
+	c.usersMu.RLock()
+	defer c.usersMu.RUnlock()
+
+	// Return a copy to avoid race conditions
+	users := make([]KiwiUser, len(c.activeUsers))
+	copy(users, c.activeUsers)
+	return users
 }
 
 // splitKeyValue splits a string of key=value pairs

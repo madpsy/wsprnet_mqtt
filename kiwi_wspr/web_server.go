@@ -28,16 +28,16 @@ type WebServer struct {
 
 // KiwiStatus represents the status information from a KiwiSDR instance
 type KiwiStatus struct {
-	Status     string `json:"status"`
-	Offline    string `json:"offline"`
-	Name       string `json:"name"`
-	Users      string `json:"users"`
-	UsersMax   string `json:"users_max"`
-	Location   string `json:"loc"`
-	SwVersion  string `json:"sw_version"`
-	Antenna    string `json:"antenna"`
+	Status     string    `json:"status"`
+	Offline    string    `json:"offline"`
+	Name       string    `json:"name"`
+	Users      string    `json:"users"`
+	UsersMax   string    `json:"users_max"`
+	Location   string    `json:"loc"`
+	SwVersion  string    `json:"sw_version"`
+	Antenna    string    `json:"antenna"`
 	LastUpdate time.Time `json:"last_update"`
-	Error      string `json:"error,omitempty"`
+	Error      string    `json:"error,omitempty"`
 }
 
 // NewWebServer creates a new web server
@@ -49,10 +49,10 @@ func NewWebServer(config *AppConfig, configFile string, port int, coordinatorMan
 		port:               port,
 		kiwiStatusCache:    make(map[string]*KiwiStatus),
 	}
-	
+
 	// Start background status polling
 	go ws.pollKiwiStatus()
-	
+
 	return ws
 }
 
@@ -70,6 +70,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/api/bands", ws.handleBands)
 	http.HandleFunc("/api/status", ws.handleStatus)
 	http.HandleFunc("/api/kiwi/status", ws.handleKiwiStatus)
+	http.HandleFunc("/api/kiwi/users", ws.handleKiwiUsers)
 	http.HandleFunc("/api/mqtt/test", ws.handleMQTTTest)
 
 	addr := fmt.Sprintf(":%d", ws.port)
@@ -163,7 +164,7 @@ func (ws *WebServer) handleBands(w http.ResponseWriter, r *http.Request) {
 // handleStatus returns the current status including MQTT and band connection states
 func (ws *WebServer) handleStatus(w http.ResponseWriter, r *http.Request) {
 	var status map[string]interface{}
-	
+
 	if ws.coordinatorManager != nil {
 		status = ws.coordinatorManager.GetDetailedStatus()
 	} else {
@@ -204,7 +205,7 @@ func (ws *WebServer) handleMQTTTest(w http.ResponseWriter, r *http.Request) {
 
 	// Try to create a test MQTT connection with explicit timeout checking
 	log.Printf("Testing MQTT connection to %s:%d", mqttConfig.Host, mqttConfig.Port)
-	
+
 	// Create MQTT client with test config
 	testPublisher, connectedChan := NewMQTTPublisherWithStatus(&mqttConfig)
 	if testPublisher == nil {
@@ -215,7 +216,7 @@ func (ws *WebServer) handleMQTTTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer testPublisher.Disconnect()
-	
+
 	// Wait for connection result with timeout
 	select {
 	case connected := <-connectedChan:
@@ -242,10 +243,10 @@ func (ws *WebServer) handleMQTTTest(w http.ResponseWriter, r *http.Request) {
 func (ws *WebServer) pollKiwiStatus() {
 	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
-	
+
 	// Poll immediately on startup
 	ws.updateAllKiwiStatus()
-	
+
 	for range ticker.C {
 		ws.updateAllKiwiStatus()
 	}
@@ -256,15 +257,15 @@ func (ws *WebServer) updateAllKiwiStatus() {
 	ws.mu.RLock()
 	instances := ws.config.KiwiInstances
 	ws.mu.RUnlock()
-	
+
 	for _, inst := range instances {
 		if !inst.Enabled {
 			continue
 		}
-		
+
 		go func(instance KiwiInstance) {
 			status := ws.fetchKiwiStatus(instance.Host, instance.Port)
-			
+
 			ws.kiwiStatusMu.Lock()
 			ws.kiwiStatusCache[instance.Name] = status
 			ws.kiwiStatusMu.Unlock()
@@ -275,11 +276,11 @@ func (ws *WebServer) updateAllKiwiStatus() {
 // fetchKiwiStatus fetches status from a KiwiSDR instance
 func (ws *WebServer) fetchKiwiStatus(host string, port int) *KiwiStatus {
 	url := fmt.Sprintf("http://%s:%d/status", host, port)
-	
+
 	client := &http.Client{
 		Timeout: 5 * time.Second,
 	}
-	
+
 	resp, err := client.Get(url)
 	if err != nil {
 		return &KiwiStatus{
@@ -288,25 +289,25 @@ func (ws *WebServer) fetchKiwiStatus(host string, port int) *KiwiStatus {
 		}
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode != http.StatusOK {
 		return &KiwiStatus{
 			Error:      fmt.Sprintf("HTTP %d", resp.StatusCode),
 			LastUpdate: time.Now(),
 		}
 	}
-	
+
 	// Parse the key=value format
 	status := &KiwiStatus{
 		LastUpdate: time.Now(),
 	}
-	
+
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		status.Error = fmt.Sprintf("Read failed: %v", err)
 		return status
 	}
-	
+
 	scanner := bufio.NewScanner(strings.NewReader(string(body)))
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -314,10 +315,10 @@ func (ws *WebServer) fetchKiwiStatus(host string, port int) *KiwiStatus {
 		if len(parts) != 2 {
 			continue
 		}
-		
+
 		key := strings.TrimSpace(parts[0])
 		value := strings.TrimSpace(parts[1])
-		
+
 		switch key {
 		case "status":
 			status.Status = value
@@ -337,7 +338,7 @@ func (ws *WebServer) fetchKiwiStatus(host string, port int) *KiwiStatus {
 			status.Antenna = value
 		}
 	}
-	
+
 	return status
 }
 
@@ -345,7 +346,28 @@ func (ws *WebServer) fetchKiwiStatus(host string, port int) *KiwiStatus {
 func (ws *WebServer) handleKiwiStatus(w http.ResponseWriter, r *http.Request) {
 	ws.kiwiStatusMu.RLock()
 	defer ws.kiwiStatusMu.RUnlock()
-	
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(ws.kiwiStatusCache)
+}
+
+// handleKiwiUsers returns the active users for all KiwiSDR instances
+func (ws *WebServer) handleKiwiUsers(w http.ResponseWriter, r *http.Request) {
+	var usersByInstance map[string]interface{}
+
+	if ws.coordinatorManager != nil {
+		// Get active users from coordinator manager
+		users := ws.coordinatorManager.GetActiveUsersByInstance()
+
+		// Convert to interface{} map for JSON encoding
+		usersByInstance = make(map[string]interface{})
+		for instance, userList := range users {
+			usersByInstance[instance] = userList
+		}
+	} else {
+		usersByInstance = make(map[string]interface{})
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(usersByInstance)
 }

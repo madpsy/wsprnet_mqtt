@@ -172,24 +172,31 @@ input:focus, select:focus {
 
 /* Modal styles */
 .modal {
+    display: none;
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
     background: rgba(0, 0, 0, 0.5);
-    display: flex;
     align-items: center;
     justify-content: center;
     z-index: 1000;
+}
+
+.modal.show {
+    display: flex;
 }
 
 .modal-content {
     background: white;
     border-radius: 12px;
     width: 90%;
-    max-width: 500px;
+    max-width: 700px;
+    max-height: 80vh;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+    display: flex;
+    flex-direction: column;
 }
 
 .modal-header {
@@ -200,12 +207,13 @@ input:focus, select:focus {
     align-items: center;
 }
 
-.modal-header h3 {
+.modal-header h2 {
     color: #667eea;
     font-size: 1.5em;
+    margin: 0;
 }
 
-.modal-close {
+.close {
     background: none;
     border: none;
     font-size: 2em;
@@ -217,12 +225,13 @@ input:focus, select:focus {
     height: 30px;
 }
 
-.modal-close:hover {
+.close:hover {
     color: #333;
 }
 
 .modal-body {
     padding: 20px;
+    overflow-y: auto;
 }
 
 .modal-footer {
@@ -231,4 +240,76 @@ input:focus, select:focus {
     display: flex;
     justify-content: flex-end;
     gap: 10px;
+}
+
+.user-instance {
+    margin-bottom: 20px;
+}
+
+.user-instance h3 {
+    color: #667eea;
+    margin-bottom: 10px;
+    font-size: 1.2em;
+}
+
+.user-card {
+    background: #f8f9fa;
+    padding: 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    border-left: 4px solid #667eea;
+}
+
+.user-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.user-name {
+    font-weight: 600;
+    color: #333;
+}
+
+.user-location {
+    color: #666;
+    font-size: 0.9em;
+}
+
+.user-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 8px;
+    font-size: 0.9em;
+    color: #666;
+}
+
+.user-detail {
+    display: flex;
+    align-items: center;
+}
+
+.user-detail strong {
+    margin-right: 5px;
+    color: #333;
+}
+
+.recording-badge {
+    background: #ef4444;
+    color: white;
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 0.8em;
+    font-weight: 600;
+}
+
+.users-clickable {
+    cursor: pointer;
+    text-decoration: underline;
+    color: #667eea;
+}
+
+.users-clickable:hover {
+    color: #5568d3;
 }

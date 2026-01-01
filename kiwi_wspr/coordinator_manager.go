@@ -81,19 +81,19 @@ func (cm *CoordinatorManager) StartAll() error {
 
 	// Track last instance to add delay only between bands on same instance
 	var lastInstance string
-	
+
 	for _, band := range enabledBands {
 		// Add small delay if this band uses the same instance as the previous one
 		// This ensures unique WebSocket connection timestamps and avoids conflicts
 		if lastInstance == band.Instance && lastInstance != "" {
 			time.Sleep(100 * time.Millisecond)
 		}
-		
+
 		if err := cm.startCoordinator(band); err != nil {
 			log.Printf("CoordinatorManager: Failed to start coordinator for %s: %v", band.Name, err)
 			continue
 		}
-		
+
 		lastInstance = band.Instance
 	}
 
@@ -192,12 +192,12 @@ func (cm *CoordinatorManager) Reload(newConfig *AppConfig) error {
 	mqttChanged := cm.mqttConfigChanged(cm.appConfig.MQTT, newConfig.MQTT)
 	if mqttChanged {
 		log.Println("CoordinatorManager: MQTT configuration changed, reconnecting...")
-		
+
 		// Disconnect old MQTT publisher
 		if cm.mqttPublisher != nil {
 			cm.mqttPublisher.Disconnect()
 		}
-		
+
 		// Create new MQTT publisher if enabled
 		if newConfig.MQTT.Enabled {
 			newPublisher, err := NewMQTTPublisher(&newConfig.MQTT)
@@ -212,7 +212,7 @@ func (cm *CoordinatorManager) Reload(newConfig *AppConfig) error {
 			cm.mqttPublisher = nil
 			log.Println("CoordinatorManager: MQTT disabled")
 		}
-		
+
 		// Update MQTT publisher in all running coordinators
 		// Also update their topic prefixes from the current config
 		for name, coord := range cm.coordinators {
@@ -320,22 +320,22 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 	defer cm.mu.RUnlock()
 
 	status := make(map[string]interface{})
-	
+
 	// MQTT status
 	mqttStatus := map[string]interface{}{
 		"enabled":   cm.appConfig.MQTT.Enabled,
 		"connected": false,
 	}
-	
+
 	if cm.mqttPublisher != nil && cm.appConfig.MQTT.Enabled {
 		mqttStatus["connected"] = cm.mqttPublisher.IsConnected()
 	}
-	
+
 	status["mqtt"] = mqttStatus
-	
+
 	// Band status - include all bands from config with their connection state
 	bandStatuses := make([]map[string]interface{}, 0)
-	
+
 	for _, band := range cm.appConfig.WSPRBands {
 		bandStatus := map[string]interface{}{
 			"name":              band.Name,
@@ -347,12 +347,12 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 			"last_decode_count": 0,
 			"error":             "",
 		}
-		
+
 		// Check if this band has a running coordinator
 		if coord, exists := cm.coordinators[band.Name]; exists {
 			// Get decode statistics and recording status
 			lastDecodeTime, lastDecodeCount, recordingState, lastError := coord.GetStatus()
-			
+
 			// Map recording state to status string
 			switch recordingState {
 			case RecordingStateWaiting:
@@ -365,17 +365,58 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 					bandStatus["error"] = lastError
 				}
 			}
-			
+
 			if !lastDecodeTime.IsZero() {
 				bandStatus["last_decode_time"] = lastDecodeTime.Format(time.RFC3339)
 			}
 			bandStatus["last_decode_count"] = lastDecodeCount
 		}
-		
+
 		bandStatuses = append(bandStatuses, bandStatus)
 	}
-	
+
 	status["bands"] = bandStatuses
-	
+
 	return status
+}
+
+// GetActiveUsersByInstance returns active users grouped by instance name
+func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	usersByInstance := make(map[string][]KiwiUser)
+
+	// Track which instances we've already queried to avoid duplicates
+	queriedInstances := make(map[string]bool)
+
+	// Iterate through all coordinators and get their active users
+	for _, coord := range cm.coordinators {
+		// Get the band config to find the instance name
+		var instanceName string
+		for _, band := range cm.appConfig.WSPRBands {
+			if coord.displayName == band.Name {
+				instanceName = band.Instance
+				break
+			}
+		}
+
+		if instanceName == "" {
+			continue
+		}
+
+		// Skip if we've already queried this instance
+		if queriedInstances[instanceName] {
+			continue
+		}
+		queriedInstances[instanceName] = true
+
+		// Get active users from this coordinator
+		users := coord.GetActiveUsers()
+		if len(users) > 0 {
+			usersByInstance[instanceName] = users
+		}
+	}
+
+	return usersByInstance
 }
