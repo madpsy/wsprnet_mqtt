@@ -255,6 +255,9 @@ func (wc *WSPRCoordinator) recordingLoop() {
 			if waitDuration > 0 {
 				log.Printf("WSPR Coordinator: Waiting %d seconds for next WSPR cycle...", int(waitDuration.Seconds()))
 				time.Sleep(waitDuration)
+			} else if waitDuration < 0 {
+				// We're behind schedule - log warning but continue
+				log.Printf("WSPR Coordinator: WARNING: Behind schedule by %d seconds", int(-waitDuration.Seconds()))
 			}
 
 			// Record full WSPR cycle (115 seconds)
@@ -284,7 +287,7 @@ func (wc *WSPRCoordinator) recordingLoop() {
 		wc.lastError = ""
 		wc.mu.Unlock()
 
-		// Decode the recording that just completed
+		// Decode the recording that just completed (in background)
 		go func(file string, timestamp time.Time) {
 			log.Printf("WSPR Coordinator: Decoding %s", filepath.Base(file))
 			decodes, err := wc.decodeCycle(file, timestamp)
