@@ -310,13 +310,30 @@ function updateInstancesAndBands() {
                         ${isInstanceDisabled ? '<span style="color: #999; font-size: 12px; margin-left: 10px;">(Instance Disabled)</span>' : ''}
                     </div>
                     <div class="item-actions">
-                        <button class="btn ${band.Enabled ? 'btn-danger' : 'btn-success'}" onclick="toggleBand(${bandIdx})" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
+                        <button class="btn ${band.Enabled ? 'btn-danger' : 'btn-success'}" data-action="toggle" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>
                             ${band.Enabled ? 'Disable' : 'Enable'}
                         </button>
-                        <button class="btn btn-secondary" onclick="duplicateBand(${bandIdx})" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>Duplicate</button>
-                        <button class="btn btn-danger" onclick="deleteBand(${bandIdx})" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>Delete</button>
+                        <button class="btn btn-secondary" data-action="duplicate" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>Duplicate</button>
+                        <button class="btn btn-danger" data-action="delete" ${isInstanceDisabled ? 'disabled style="opacity: 0.5; cursor: not-allowed;"' : ''}>Delete</button>
                     </div>
                 `;
+
+                // Attach event listeners to band buttons
+                const bandActionsDiv = li.querySelector('.item-actions');
+                const bandButtons = bandActionsDiv.querySelectorAll('button');
+                bandButtons.forEach(btn => {
+                    if (btn.disabled) return; // Skip disabled buttons
+
+                    const action = btn.getAttribute('data-action');
+                    if (action === 'toggle') {
+                        btn.addEventListener('click', () => toggleBand(bandIdx));
+                    } else if (action === 'duplicate') {
+                        btn.addEventListener('click', () => duplicateBand(bandIdx));
+                    } else if (action === 'delete') {
+                        btn.addEventListener('click', () => deleteBand(bandIdx));
+                    }
+                });
+
                 bandsList.appendChild(li);
             });
             
