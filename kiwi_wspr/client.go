@@ -329,6 +329,9 @@ func (c *KiwiClient) handleMSG(body string) {
 
 // parseUserCallback parses the user_cb JSON data containing active users
 func (c *KiwiClient) parseUserCallback(data string) {
+	// Always log that we received user_cb for debugging
+	log.Printf("Received user_cb message, data length: %d", len(data))
+
 	// URL decode the data
 	decoded := strings.ReplaceAll(data, "%20", " ")
 	decoded = strings.ReplaceAll(decoded, "%28", "(")
@@ -336,21 +339,27 @@ func (c *KiwiClient) parseUserCallback(data string) {
 	decoded = strings.ReplaceAll(decoded, "%2C", ",")
 	decoded = strings.ReplaceAll(decoded, "%2c", ",")
 
+	log.Printf("Decoded user_cb data: %s", decoded)
+
 	// Parse JSON array
 	var users []KiwiUser
 	if err := json.Unmarshal([]byte(decoded), &users); err != nil {
-		if !c.config.Quiet {
-			log.Printf("Failed to parse user_cb: %v", err)
-		}
+		log.Printf("Failed to parse user_cb JSON: %v, data: %s", err, decoded)
 		return
 	}
 
+	log.Printf("Parsed %d total user slots from JSON", len(users))
+
 	// Filter out empty slots (users with only index field)
+	// A slot is active if it has a frequency (f field) set
 	activeUsers := make([]KiwiUser, 0)
 	for _, user := range users {
-		// Check if user has meaningful data (not just an index)
-		if user.Name != "" || user.Frequency != 0 {
+		// Check if user has meaningful data - frequency > 0 means active connection
+		if user.Frequency > 0 {
 			activeUsers = append(activeUsers, user)
+			log.Printf("Active user found: name=%s, freq=%d, location=%s", user.Name, user.Frequency, user.Location)
+		} else {
+			log.Printf("Skipping empty slot: index=%d, freq=%d", user.Index, user.Frequency)
 		}
 	}
 
@@ -359,9 +368,7 @@ func (c *KiwiClient) parseUserCallback(data string) {
 	c.activeUsers = activeUsers
 	c.usersMu.Unlock()
 
-	if !c.config.Quiet {
-		log.Printf("Active users: %d", len(activeUsers))
-	}
+	log.Printf("Stored %d active users (filtered from %d total slots)", len(activeUsers), len(users))
 }
 
 // GetActiveUsers returns the current list of active users
