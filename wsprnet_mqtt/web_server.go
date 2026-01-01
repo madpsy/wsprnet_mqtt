@@ -1078,6 +1078,12 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             </div>
         </div>
 
+        <!-- Band Navigation -->
+        <div class="band-nav">
+            <div class="band-nav-title">Jump to Band:</div>
+            <div class="band-nav-buttons" id="gapsBandNav"></div>
+        </div>
+
         <!-- Gap Summary -->
         <div id="gapsSummary" style="margin-bottom: 20px;"></div>
 
@@ -3893,8 +3899,19 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             if (!gaps || Object.keys(gaps).length === 0) {
                 summaryContainer.innerHTML = '';
                 detailsContainer.innerHTML = '<p style="color: #10b981; text-align: center; padding: 40px; font-size: 1.2em;">✓ No gaps found! All WSPR cycles have spots.</p>';
+                document.getElementById('gapsBandNav').innerHTML = '';
                 return;
             }
+
+            // Collect all bands with gaps for navigation
+            const bandsWithGaps = new Set();
+            Object.values(gaps).forEach(bandGaps => {
+                bandGaps.forEach(gap => bandsWithGaps.add(gap.band));
+            });
+            const sortedBandsWithGaps = sortBands(Array.from(bandsWithGaps));
+
+            // Create band navigation
+            createBandNavigation(sortedBandsWithGaps, 'gapsBandNav', 'gap_');
 
             // Calculate summary statistics
             let totalGaps = 0;
@@ -3936,38 +3953,56 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 </div>
             ` + "`" + `;
 
-            // Display details per instance
-            let html = '';
-            const sortedInstances = Object.keys(gaps).sort();
+            // Reorganize data by band first, then instance
+            const bandData = {};
+            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+                bandGaps.forEach(gap => {
+                    if (!bandData[gap.band]) {
+                        bandData[gap.band] = [];
+                    }
+                    bandData[gap.band].push({
+                        instance: instance,
+                        ...gap
+                    });
+                });
+            });
 
-            sortedInstances.forEach(instance => {
-                const bandGaps = gaps[instance];
-                if (bandGaps.length === 0) return;
+            // Display details per band
+            let html = '';
+            const sortedBands = sortBands(Object.keys(bandData));
+
+            sortedBands.forEach(band => {
+                const instanceGaps = bandData[band];
+                if (instanceGaps.length === 0) return;
 
                 // Sort by coverage rate (worst first)
-                bandGaps.sort((a, b) => a.coverage_rate - b.coverage_rate);
+                instanceGaps.sort((a, b) => a.coverage_rate - b.coverage_rate);
 
-                const displayName = instance === 'deduped' ? '📤 Deduped (Sent to WSPRNet)' : ` + "`" + `🖥️ Instance: ${instance}` + "`" + `;
+                const bandColor = bandColors[band] || '#f59e0b';
+                const bandId = 'gap_' + band.replace(/[^a-zA-Z0-9]/g, '_');
 
                 html += ` + "`" + `
-                    <div style="margin-bottom: 30px; border: 2px solid #334155; border-radius: 12px; overflow: hidden;">
+                    <div id="${bandId}" style="margin-bottom: 30px; border: 2px solid #334155; border-radius: 12px; overflow: hidden;">
                         <div style="background: #334155; padding: 15px;">
-                            <h3 style="color: #60a5fa; margin: 0;">${displayName}</h3>
+                            <h3 style="color: #60a5fa; margin: 0;">
+                                <span class="badge" style="background: ${bandColor}; color: white; font-size: 1.1em; padding: 6px 14px;">${band}</span>
+                            </h3>
                         </div>
                         <div style="padding: 20px;">
                 ` + "`" + `;
 
-                bandGaps.forEach(gap => {
+                instanceGaps.forEach(gap => {
                     const coverageColor = gap.coverage_rate >= 90 ? '#10b981' : gap.coverage_rate >= 75 ? '#f59e0b' : '#ef4444';
-                    const maxDisplay = 20; // Show first 20 missing cycles
+                    const maxDisplay = 20;
                     const displayCycles = gap.missing_cycles.slice(0, maxDisplay);
                     const remaining = gap.missing_cycles.length - maxDisplay;
+                    const displayName = gap.instance === 'deduped' ? '📤 Deduped (Sent to WSPRNet)' : ` + "`" + `🖥️ ${gap.instance}` + "`" + `;
 
                     html += ` + "`" + `
                         <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155;">
                             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
                                 <div>
-                                    <span class="badge badge-warning" style="font-size: 1.1em; padding: 6px 14px;">${gap.band}</span>
+                                    <span style="color: #e2e8f0; font-weight: 600; font-size: 1.1em;">${displayName}</span>
                                 </div>
                                 <div style="text-align: right;">
                                     <div style="font-size: 1.5em; font-weight: bold; color: ${coverageColor};">
