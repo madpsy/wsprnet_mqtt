@@ -115,6 +115,7 @@ func (sw *SpotWriter) WriteRaw(spot *WSPRReportWithSource) error {
 		Drift:     spot.Drift,
 		DT:        spot.DT,
 		Country:   spot.Country,
+		Instance:  spot.InstanceName,
 	}
 
 	// Write to file
