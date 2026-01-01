@@ -2,6 +2,8 @@ let config = {};
 let statusData = null;
 let kiwiStatusData = {};
 let userToBandMapping = {};
+let usersModalInterval = null;
+let currentModalInstance = null;
 
 async function loadConfig() {
     try {
@@ -174,6 +176,8 @@ function updateInstancesAndBands() {
         
         // Instance header
         const instanceHeader = document.createElement('div');
+        instanceHeader.className = 'instance-header';
+        instanceHeader.setAttribute('data-instance-idx', instIdx);
         instanceHeader.style.display = 'flex';
         instanceHeader.style.justifyContent = 'space-between';
         instanceHeader.style.alignItems = 'center';
@@ -811,12 +815,8 @@ function updateInstanceHeaders() {
     config.KiwiInstances.forEach((inst, instIdx) => {
         const kiwiStatus = kiwiStatusData[inst.Name];
         
-        // Find the instance card
-        const instanceCards = document.querySelectorAll('#instances-container > div');
-        if (instIdx >= instanceCards.length) return;
-        
-        const instanceCard = instanceCards[instIdx];
-        const instanceHeader = instanceCard.querySelector('div');
+        // Find the instance header by data attribute
+        const instanceHeader = document.querySelector(`.instance-header[data-instance-idx="${instIdx}"]`);
         if (!instanceHeader) return;
         
         // Build status line
@@ -889,14 +889,10 @@ function startStatusPolling() {
     setInterval(loadKiwiStatus, 10000);
 }
 
-// Show users modal for a specific instance
-async function showUsersModal(instanceName) {
-    const modal = document.getElementById('users-modal');
+// Update users modal content (internal function)
+async function updateUsersModalContent(instanceName) {
     const modalBody = document.getElementById('users-modal-body');
-    
-    // Show modal with loading message
-    modalBody.innerHTML = '<p>Loading active users...</p>';
-    modal.classList.add('show');
+
     try {
         // Load user mapping first
         await loadUserMapping();
@@ -907,7 +903,6 @@ async function showUsersModal(instanceName) {
         // Get users for this instance
         const users = usersData[instanceName] || [];
 
-        
         if (users.length === 0) {
             modalBody.innerHTML = `
                 <div style="text-align: center; padding: 20px; color: #666;">
@@ -917,6 +912,7 @@ async function showUsersModal(instanceName) {
             `;
             return;
         }
+
         // Build users display
         let html = `<div class="user-instance">`;
         html += `<h3>${instanceName} - ${users.length} Active User${users.length !== 1 ? 's' : ''}</h3>`;
@@ -930,7 +926,6 @@ async function showUsersModal(instanceName) {
             if (userToBandMapping[rawName]) {
                 displayName = `Decoder - ${userToBandMapping[rawName]}`;
             }
-
 
             const location = decodeURIComponent(user.g || 'Unknown location');
             const freqKHz = (user.f / 1000).toFixed(1);
@@ -970,10 +965,43 @@ async function showUsersModal(instanceName) {
     }
 }
 
+// Show users modal for a specific instance
+async function showUsersModal(instanceName) {
+    const modal = document.getElementById('users-modal');
+    const modalBody = document.getElementById('users-modal-body');
+
+    // Store current instance for auto-refresh
+    currentModalInstance = instanceName;
+
+    // Show modal with loading message
+    modalBody.innerHTML = '<p>Loading active users...</p>';
+    modal.classList.add('show');
+
+    // Load initial content
+    await updateUsersModalContent(instanceName);
+
+    // Set up auto-refresh every 2 seconds while modal is open
+    if (usersModalInterval) {
+        clearInterval(usersModalInterval);
+    }
+    usersModalInterval = setInterval(() => {
+        if (currentModalInstance) {
+            updateUsersModalContent(currentModalInstance);
+        }
+    }, 2000);
+}
+
 // Close users modal
 function closeUsersModal() {
     const modal = document.getElementById('users-modal');
     modal.classList.remove('show');
+
+    // Stop auto-refresh
+    if (usersModalInterval) {
+        clearInterval(usersModalInterval);
+        usersModalInterval = null;
+    }
+    currentModalInstance = null;
 }
 
 // Close modal when clicking outside
