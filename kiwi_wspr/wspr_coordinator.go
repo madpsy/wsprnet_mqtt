@@ -42,6 +42,7 @@ type WSPRCoordinator struct {
 	lastDecodeCount int
 	recordingState  RecordingState // Current recording state
 	lastError       string         // Track last error message
+	cachedUsers     []KiwiUser     // Cached active users from last connection
 }
 
 // WSPRDecode represents a decoded WSPR spot
@@ -155,7 +156,9 @@ func (wc *WSPRCoordinator) waitForWSPRCycle() {
 
 // recordingLoop handles the continuous recording and decoding cycle
 func (wc *WSPRCoordinator) recordingLoop() {
-	// WSPR requires recordings to start exactly on even minute boundaries
+	// Start first recording immediately (may be partial cycle)
+	firstCycle := true
+
 	for {
 		select {
 		case <-wc.stopChan:
@@ -164,33 +167,62 @@ func (wc *WSPRCoordinator) recordingLoop() {
 		default:
 		}
 
-		// Wait until next WSPR cycle boundary (even minutes: 00, 02, 04, etc.)
-		now := time.Now().UTC()
-		currentMinute := now.Minute()
-		currentSecond := now.Second()
+		var cycleStart time.Time
+		var recordDuration time.Duration
 
-		// Calculate next even minute
-		nextEvenMinute := currentMinute
-		if currentMinute%2 == 1 {
-			nextEvenMinute = currentMinute + 1
-		} else if currentSecond > 0 {
-			nextEvenMinute = currentMinute + 2
+		if firstCycle {
+			// Start immediately on first cycle, record until next even minute boundary
+			now := time.Now().UTC()
+			cycleStart = now
+			currentMinute := now.Minute()
+			currentSecond := now.Second()
+
+			// Calculate next even minute
+			nextEvenMinute := currentMinute
+			if currentMinute%2 == 1 {
+				nextEvenMinute = currentMinute + 1
+			} else if currentSecond > 0 {
+				nextEvenMinute = currentMinute + 2
+			}
+
+			// Calculate seconds until next cycle boundary
+			minutesToWait := nextEvenMinute - currentMinute
+			secondsToWait := minutesToWait*60 - currentSecond
+
+			// Record for remaining time in this cycle (partial recording)
+			recordDuration = time.Duration(secondsToWait) * time.Second
+			log.Printf("WSPR Coordinator: Starting immediate partial recording for %d seconds", secondsToWait)
+			firstCycle = false
+		} else {
+			// Wait until next WSPR cycle boundary (even minutes: 00, 02, 04, etc.)
+			now := time.Now().UTC()
+			currentMinute := now.Minute()
+			currentSecond := now.Second()
+
+			// Calculate next even minute
+			nextEvenMinute := currentMinute
+			if currentMinute%2 == 1 {
+				nextEvenMinute = currentMinute + 1
+			} else if currentSecond > 0 {
+				nextEvenMinute = currentMinute + 2
+			}
+
+			// Wait until the cycle boundary
+			minutesToWait := nextEvenMinute - currentMinute
+			secondsToWait := minutesToWait*60 - currentSecond
+
+			if secondsToWait > 0 {
+				log.Printf("WSPR Coordinator: Waiting %d seconds for next WSPR cycle...", secondsToWait)
+				time.Sleep(time.Duration(secondsToWait) * time.Second)
+			}
+
+			// Record full WSPR cycle (115 seconds)
+			cycleStart = time.Now().UTC()
+			recordDuration = 115 * time.Second
+			log.Printf("WSPR Coordinator: Starting recording cycle at %s", cycleStart.Format("15:04:05"))
 		}
 
-		// Wait until the cycle boundary
-		minutesToWait := nextEvenMinute - currentMinute
-		secondsToWait := minutesToWait*60 - currentSecond
-
-		if secondsToWait > 0 {
-			log.Printf("WSPR Coordinator: Waiting %d seconds for next WSPR cycle...", secondsToWait)
-			time.Sleep(time.Duration(secondsToWait) * time.Second)
-		}
-
-		// Record one WSPR cycle (2 minutes) starting exactly now
-		cycleStart := time.Now().UTC()
-		log.Printf("WSPR Coordinator: Starting recording cycle at %s", cycleStart.Format("15:04:05"))
-
-		wavFile, err := wc.recordCycle(cycleStart)
+		wavFile, err := wc.recordCycle(cycleStart, recordDuration)
 		if err != nil {
 			log.Printf("WSPR Coordinator: Recording error: %v", err)
 
@@ -260,8 +292,8 @@ func (wc *WSPRCoordinator) recordingLoop() {
 	}
 }
 
-// recordCycle records one WSPR cycle (2 minutes) - creates new client each time for new file
-func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time) (string, error) {
+// recordCycle records one WSPR cycle - creates new client each time for new file
+func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Duration) (string, error) {
 	// Generate filename based on cycle start time
 	// Frequency is already in kHz, use it directly for filename
 	baseFilename := fmt.Sprintf("%s_%d_wspr.wav",
@@ -276,13 +308,11 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time) (string, error) {
 		wc.client = nil
 	}
 
-	log.Printf("WSPR Coordinator: Starting recording to %s", baseFilename)
+	log.Printf("WSPR Coordinator: Starting recording to %s for %.0f seconds", baseFilename, duration.Seconds())
 
 	// Create config for this recording cycle
 	recordConfig := *wc.config
-	// WSPR transmissions are ~110.6 seconds, record for 115 seconds to capture full transmission
-	// This leaves 5 seconds before the next cycle for cleanup and connection setup
-	recordConfig.Duration = 115 * time.Second
+	recordConfig.Duration = duration
 	recordConfig.Filename = baseFilename
 	recordConfig.OutputDir = wc.workDir
 
@@ -300,12 +330,16 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time) (string, error) {
 		}
 	}()
 
-	// Wait for the recording to complete (115 seconds)
-	// This ensures we stop before the next WSPR cycle starts
-	time.Sleep(115 * time.Second)
+	// Wait for the recording to complete
+	time.Sleep(duration)
 
-	// Close the client to ensure WAV file is flushed
+	// Cache active users before closing the client
 	if wc.client != nil {
+		users := wc.client.GetActiveUsers()
+		wc.mu.Lock()
+		wc.cachedUsers = users
+		wc.mu.Unlock()
+
 		wc.client.Close()
 		wc.client = nil
 	}
@@ -515,14 +549,17 @@ func (wc *WSPRCoordinator) GetStatus() (time.Time, int, RecordingState, string) 
 // GetActiveUsers returns the list of active users from the KiwiSDR connection
 func (wc *WSPRCoordinator) GetActiveUsers() []KiwiUser {
 	wc.mu.Lock()
-	client := wc.client
-	wc.mu.Unlock()
+	defer wc.mu.Unlock()
 
-	if client == nil {
-		return []KiwiUser{}
+	// If client is active, get fresh data
+	if wc.client != nil {
+		return wc.client.GetActiveUsers()
 	}
 
-	return client.GetActiveUsers()
+	// Otherwise return cached users from last connection
+	users := make([]KiwiUser, len(wc.cachedUsers))
+	copy(users, wc.cachedUsers)
+	return users
 }
 
 // UpdateMQTTPublisher updates the MQTT publisher for this coordinator
