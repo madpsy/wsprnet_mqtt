@@ -354,8 +354,52 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 		}
 	}()
 
-	// Wait for the recording to complete
-	time.Sleep(duration)
+	// Monitor recording and reconnect if not receiving data
+	endTime := time.Now().Add(duration)
+	ticker := time.NewTicker(1 * time.Second)
+	defer ticker.Stop()
+
+	lastReconnectAttempt := time.Now()
+	for time.Now().Before(endTime) {
+		select {
+		case <-ticker.C:
+			// Check if we're receiving data
+			if !wc.IsReceivingData() && time.Since(lastReconnectAttempt) >= 1*time.Second {
+				log.Printf("WSPR Coordinator: Not receiving data, attempting reconnect...")
+				lastReconnectAttempt = time.Now()
+
+				// Close current client
+				if wc.client != nil {
+					wc.client.Close()
+				}
+
+				// Create new client
+				newClient, err := NewKiwiClient(&recordConfig)
+				if err != nil {
+					log.Printf("WSPR Coordinator: Reconnect failed: %v", err)
+					continue
+				}
+
+				wc.mu.Lock()
+				wc.client = newClient
+				wc.mu.Unlock()
+
+				// Start new client
+				go func() {
+					if err := newClient.Run(); err != nil {
+						log.Printf("WSPR Coordinator: Client error after reconnect: %v", err)
+					}
+				}()
+			}
+		case <-wc.stopChan:
+			// Stop signal received
+			if wc.client != nil {
+				wc.client.Close()
+				wc.client = nil
+			}
+			return "", fmt.Errorf("recording stopped")
+		}
+	}
 
 	// Cache active users before closing the client
 	if wc.client != nil {
@@ -568,6 +612,19 @@ func (wc *WSPRCoordinator) GetStatus() (time.Time, int, RecordingState, string) 
 	wc.mu.Lock()
 	defer wc.mu.Unlock()
 	return wc.lastDecodeTime, wc.lastDecodeCount, wc.recordingState, wc.lastError
+}
+
+// IsReceivingData returns true if the client is actively receiving SND data
+func (wc *WSPRCoordinator) IsReceivingData() bool {
+	wc.mu.Lock()
+	client := wc.client
+	wc.mu.Unlock()
+
+	if client == nil {
+		return false
+	}
+
+	return client.IsReceivingData()
 }
 
 // GetActiveUsers returns the list of active users from the KiwiSDR connection

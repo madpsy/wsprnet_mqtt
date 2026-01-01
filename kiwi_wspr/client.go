@@ -38,20 +38,22 @@ type KiwiUser struct {
 
 // KiwiClient represents a connection to a KiwiSDR server
 type KiwiClient struct {
-	config      *Config
-	conn        *websocket.Conn
-	decoder     *IMAAdpcmDecoder
-	sampleRate  float64
-	numChannels int
-	outputFile  *os.File
-	wavWriter   *WAVWriter
-	startTime   time.Time
-	stopChan    chan struct{}
-	mu          sync.Mutex
-	running     bool
-	kiwiVersion float64
-	activeUsers []KiwiUser
-	usersMu     sync.RWMutex
+	config        *Config
+	conn          *websocket.Conn
+	decoder       *IMAAdpcmDecoder
+	sampleRate    float64
+	numChannels   int
+	outputFile    *os.File
+	wavWriter     *WAVWriter
+	startTime     time.Time
+	stopChan      chan struct{}
+	mu            sync.Mutex
+	running       bool
+	kiwiVersion   float64
+	activeUsers   []KiwiUser
+	usersMu       sync.RWMutex
+	lastSNDTime   time.Time
+	lastSNDTimeMu sync.RWMutex
 }
 
 // NewKiwiClient creates a new KiwiSDR client
@@ -391,6 +393,26 @@ func (c *KiwiClient) GetActiveUsers() []KiwiUser {
 	return users
 }
 
+// GetLastSNDTime returns the last time SND data was received
+func (c *KiwiClient) GetLastSNDTime() time.Time {
+	c.lastSNDTimeMu.RLock()
+	defer c.lastSNDTimeMu.RUnlock()
+	return c.lastSNDTime
+}
+
+// IsReceivingData returns true if SND data was received in the last 5 seconds
+func (c *KiwiClient) IsReceivingData() bool {
+	c.lastSNDTimeMu.RLock()
+	lastTime := c.lastSNDTime
+	c.lastSNDTimeMu.RUnlock()
+
+	if lastTime.IsZero() {
+		return false
+	}
+
+	return time.Since(lastTime) < 5*time.Second
+}
+
 // splitKeyValue splits a string of key=value pairs
 func splitKeyValue(s string) map[string]string {
 	result := make(map[string]string)
@@ -476,6 +498,11 @@ func (c *KiwiClient) processAudioData(data []byte) {
 	if len(data) < 7 {
 		return
 	}
+
+	// Update last SND data received time
+	c.lastSNDTimeMu.Lock()
+	c.lastSNDTime = time.Now()
+	c.lastSNDTimeMu.Unlock()
 
 	// Parse SND packet header
 	flags := data[0]

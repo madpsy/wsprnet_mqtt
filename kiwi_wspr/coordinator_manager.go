@@ -345,6 +345,7 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 			"instance":          band.Instance,
 			"enabled":           band.Enabled,
 			"state":             "disabled", // disabled, waiting, connected, failed
+			"receiving_data":    false,
 			"last_decode_time":  nil,
 			"last_decode_count": 0,
 			"error":             "",
@@ -355,16 +356,25 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 			// Get decode statistics and recording status
 			lastDecodeTime, lastDecodeCount, recordingState, lastError := coord.GetStatus()
 
-			// Map recording state to status string
-			switch recordingState {
-			case RecordingStateWaiting:
-				bandStatus["state"] = "waiting"
-			case RecordingStateSuccess:
+			// Check if actively receiving SND data
+			isReceivingData := coord.IsReceivingData()
+			bandStatus["receiving_data"] = isReceivingData
+
+			// Map recording state to status string, but override with receiving_data status
+			if isReceivingData {
 				bandStatus["state"] = "connected"
-			case RecordingStateFailed:
-				bandStatus["state"] = "failed"
-				if lastError != "" {
-					bandStatus["error"] = lastError
+			} else {
+				switch recordingState {
+				case RecordingStateWaiting:
+					bandStatus["state"] = "waiting"
+				case RecordingStateSuccess:
+					// Was successful but not currently receiving data
+					bandStatus["state"] = "disconnected"
+				case RecordingStateFailed:
+					bandStatus["state"] = "failed"
+					if lastError != "" {
+						bandStatus["error"] = lastError
+					}
 				}
 			}
 

@@ -22,6 +22,7 @@ async function loadStatus() {
         const response = await fetch('/api/status');
         statusData = await response.json();
         updateStatusIndicators();
+        updateBandConnectionStatus();
     } catch (e) {
         console.error('Failed to load status:', e);
     }
@@ -117,7 +118,7 @@ function updateBandStatuses() {
                 const state = bandStatus.state || 'disabled';
                 
                 if (state === 'connected') {
-                    // Green dot - successfully recording
+                    // Green dot - successfully receiving SND data
                     const decodeInfo = bandStatus.last_decode_time
                         ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
                         : ' (waiting for decode)';
@@ -125,6 +126,12 @@ function updateBandStatuses() {
                 } else if (state === 'waiting') {
                     // Orange dot - coordinator started, waiting for first recording
                     statusIndicator.innerHTML = '<span style="color: #ff8c00; font-size: 16px;">●</span> (waiting)';
+                } else if (state === 'disconnected') {
+                    // Grey dot - was connected but not receiving data now
+                    const decodeInfo = bandStatus.last_decode_time
+                        ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
+                        : '';
+                    statusIndicator.innerHTML = `<span style="color: #6c757d; font-size: 16px;">●</span> (disconnected${decodeInfo})`;
                 } else if (state === 'failed') {
                     // Red dot - recording failed
                     const errorMsg = bandStatus.error ? ` - ${bandStatus.error}` : '';
@@ -892,43 +899,39 @@ function updateInstanceHeaders() {
     });
 }
 
-// Update band connection status based on active users
+// Update band connection status based on receiving_data from status API
 function updateBandConnectionStatus() {
-    if (!userToBandMapping || !activeUsersData) return;
+    if (!statusData || !statusData.bands) return;
 
-    // Create reverse mapping: band name -> user ID
-    const bandToUserMapping = {};
-    for (const [userId, bandName] of Object.entries(userToBandMapping)) {
-        bandToUserMapping[bandName] = userId;
-    }
+    // Create a map of band statuses by name
+    const bandStatusMap = {};
+    statusData.bands.forEach(band => {
+        bandStatusMap[band.name] = band;
+    });
 
     // Update each band's connection status
     document.querySelectorAll('.item[data-band-name]').forEach(bandEl => {
         const bandName = bandEl.getAttribute('data-band-name');
-        const instanceName = bandEl.getAttribute('data-instance-name');
         const statusSpan = bandEl.querySelector('.band-connection-status');
 
         if (!statusSpan) return;
 
-        // Get the user ID for this band
-        const userId = bandToUserMapping[bandName];
-        if (!userId) {
+        const bandStatus = bandStatusMap[bandName];
+        if (!bandStatus) {
             statusSpan.innerHTML = '';
             return;
         }
 
-        // Check if this user ID is in the active users for this instance
-        const instanceUsers = activeUsersData[instanceName] || [];
-        const isConnected = instanceUsers.some(user => {
-            const userName = decodeURIComponent(user.n || '');
-            return userName === userId;
-        });
+        // Use the receiving_data flag from the API
+        const isReceivingData = bandStatus.receiving_data || false;
 
         // Update the badge
-        if (isConnected) {
-            statusSpan.innerHTML = '<span class="status status-enabled" style="font-size: 11px; padding: 2px 6px;">Connected</span>';
+        if (isReceivingData) {
+            statusSpan.innerHTML = '<span class="status status-enabled">Receiving Data</span>';
+        } else if (bandStatus.enabled) {
+            statusSpan.innerHTML = '<span class="status status-disabled">Not Receiving</span>';
         } else {
-            statusSpan.innerHTML = '<span class="status status-disabled" style="font-size: 11px; padding: 2px 6px;">Disconnected</span>';
+            statusSpan.innerHTML = '';
         }
     });
 }
@@ -938,12 +941,10 @@ function startStatusPolling() {
     // Load status immediately
     loadStatus();
     loadKiwiStatus();
-    loadActiveUsers();
     
     // Poll every 10 seconds
     setInterval(loadStatus, 10000);
     setInterval(loadKiwiStatus, 10000);
-    setInterval(loadActiveUsers, 10000);
 }
 
 // Update users modal content (internal function)
