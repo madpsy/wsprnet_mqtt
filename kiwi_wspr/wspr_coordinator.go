@@ -245,23 +245,30 @@ func (wc *WSPRCoordinator) recordingLoop() {
 			log.Printf("WSPR Coordinator: Starting immediate partial recording for %d seconds", secondsToWait)
 			firstCycle = false
 		} else {
-			// Calculate next cycle start based on when the previous cycle started
-			// WSPR cycles are 120 seconds (2 minutes), recording is 115 seconds
-			// So we should wait 5 seconds after recording ends
-			nextCycleStart := cycleStart.Add(120 * time.Second)
+			// Wait until next WSPR cycle boundary (even minutes: 00, 02, 04, etc.)
 			now := time.Now().UTC()
-			waitDuration := nextCycleStart.Sub(now)
+			currentMinute := now.Minute()
+			currentSecond := now.Second()
 
-			if waitDuration > 0 {
-				log.Printf("WSPR Coordinator: Waiting %d seconds for next WSPR cycle...", int(waitDuration.Seconds()))
-				time.Sleep(waitDuration)
-			} else if waitDuration < 0 {
-				// We're behind schedule - log warning but continue
-				log.Printf("WSPR Coordinator: WARNING: Behind schedule by %d seconds", int(-waitDuration.Seconds()))
+			// Calculate next even minute
+			nextEvenMinute := currentMinute
+			if currentMinute%2 == 1 {
+				nextEvenMinute = currentMinute + 1
+			} else if currentSecond > 0 {
+				nextEvenMinute = currentMinute + 2
 			}
 
-			// Record full WSPR cycle (115 seconds)
-			cycleStart = nextCycleStart
+			// Calculate wait time
+			minutesToWait := nextEvenMinute - currentMinute
+			secondsToWait := minutesToWait*60 - currentSecond
+
+			if secondsToWait > 0 {
+				log.Printf("WSPR Coordinator: Waiting %d seconds for next WSPR cycle...", secondsToWait)
+				time.Sleep(time.Duration(secondsToWait) * time.Second)
+			}
+
+			// Record full WSPR cycle (115 seconds) starting at the even minute boundary
+			cycleStart = time.Now().UTC()
 			recordDuration = 115 * time.Second
 			log.Printf("WSPR Coordinator: Starting recording cycle at %s", cycleStart.Format("15:04:05"))
 		}
