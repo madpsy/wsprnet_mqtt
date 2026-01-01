@@ -924,12 +924,18 @@ function updateBandConnectionStatus() {
 
         // Use the receiving_data flag from the API
         const isReceivingData = bandStatus.receiving_data || false;
+        const reconnectCount = bandStatus.reconnect_count || 0;
+
+        // Build reconnection badge if there have been reconnections
+        const reconnectBadge = reconnectCount > 0
+            ? ` <span class="status" style="background-color: #ff8c00; color: white; font-size: 11px; padding: 2px 6px;">🔄 ${reconnectCount}</span>`
+            : '';
 
         // Update the badge
         if (isReceivingData) {
-            statusSpan.innerHTML = '<span class="status status-enabled">Receiving Data</span>';
+            statusSpan.innerHTML = `<span class="status status-enabled">Receiving Data</span>${reconnectBadge}`;
         } else if (bandStatus.enabled) {
-            statusSpan.innerHTML = '<span class="status status-disabled">Not Receiving</span>';
+            statusSpan.innerHTML = `<span class="status status-disabled">Not Receiving</span>${reconnectBadge}`;
         } else {
             statusSpan.innerHTML = '';
         }

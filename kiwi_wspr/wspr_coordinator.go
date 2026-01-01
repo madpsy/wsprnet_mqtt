@@ -46,6 +46,7 @@ type WSPRCoordinator struct {
 	recordingState  RecordingState // Current recording state
 	lastError       string         // Track last error message
 	cachedUsers     []KiwiUser     // Cached active users from last connection
+	reconnectCount  int            // Number of reconnections
 }
 
 // WSPRDecode represents a decoded WSPR spot
@@ -125,14 +126,18 @@ func (wc *WSPRCoordinator) Start() error {
 	log.Printf("WSPR Coordinator: Work directory: %s", wc.workDir)
 	log.Printf("WSPR Coordinator: wsprd path: %s", wc.wsprdPath)
 
-	// Create persistent client connection
-	client, err := NewKiwiClient(wc.config)
+	// Create persistent client connection with no duration limit
+	persistentConfig := *wc.config
+	persistentConfig.Duration = 0 // No timeout - keep connection alive
+	persistentConfig.OutputDir = wc.workDir
+
+	client, err := NewKiwiClient(&persistentConfig)
 	if err != nil {
 		return fmt.Errorf("failed to create client: %w", err)
 	}
 	wc.client = client
 
-	// Start client in background - it will maintain connection
+	// Start client in background - it will maintain connection indefinitely
 	go func() {
 		if err := client.Run(); err != nil {
 			log.Printf("WSPR Coordinator: Client error: %v", err)
@@ -377,13 +382,22 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 				log.Printf("WSPR Coordinator: Not receiving data, attempting reconnect...")
 				lastReconnectAttempt = time.Now()
 
+				// Increment reconnection counter
+				wc.mu.Lock()
+				wc.reconnectCount++
+				reconnectNum := wc.reconnectCount
+				wc.mu.Unlock()
+
+				log.Printf("WSPR Coordinator: Reconnection #%d for %s", reconnectNum, wc.displayName)
+
 				// Close current client connection
 				if wc.client != nil {
 					wc.client.Close()
 				}
 
-				// Create new client with same config
+				// Create new client with same config (no duration limit)
 				recordConfig := *wc.config
+				recordConfig.Duration = 0 // No timeout - keep connection alive
 				recordConfig.Filename = baseFilename
 				recordConfig.OutputDir = wc.workDir
 
@@ -626,11 +640,11 @@ func (wc *WSPRCoordinator) parseWSPRLine(line string) (*WSPRDecode, error) {
 }
 
 // GetStatus returns the current status of this coordinator
-// Returns: lastDecodeTime, lastDecodeCount, recordingState, lastError
-func (wc *WSPRCoordinator) GetStatus() (time.Time, int, RecordingState, string) {
+// Returns: lastDecodeTime, lastDecodeCount, recordingState, lastError, reconnectCount
+func (wc *WSPRCoordinator) GetStatus() (time.Time, int, RecordingState, string, int) {
 	wc.mu.Lock()
 	defer wc.mu.Unlock()
-	return wc.lastDecodeTime, wc.lastDecodeCount, wc.recordingState, wc.lastError
+	return wc.lastDecodeTime, wc.lastDecodeCount, wc.recordingState, wc.lastError, wc.reconnectCount
 }
 
 // IsReceivingData returns true if the client is actively receiving SND data

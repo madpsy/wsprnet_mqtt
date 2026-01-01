@@ -348,17 +348,19 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 			"receiving_data":    false,
 			"last_decode_time":  nil,
 			"last_decode_count": 0,
+			"reconnect_count":   0,
 			"error":             "",
 		}
 
 		// Check if this band has a running coordinator
 		if coord, exists := cm.coordinators[band.Name]; exists {
 			// Get decode statistics and recording status
-			lastDecodeTime, lastDecodeCount, recordingState, lastError := coord.GetStatus()
+			lastDecodeTime, lastDecodeCount, recordingState, lastError, reconnectCount := coord.GetStatus()
 
 			// Check if actively receiving SND data
 			isReceivingData := coord.IsReceivingData()
 			bandStatus["receiving_data"] = isReceivingData
+			bandStatus["reconnect_count"] = reconnectCount
 
 			// Map recording state to status string, but override with receiving_data status
 			if isReceivingData {
