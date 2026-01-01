@@ -270,8 +270,16 @@ func (c *KiwiClient) processTextMessage(msg string) {
 
 // handleMSG processes MSG type messages
 func (c *KiwiClient) handleMSG(body string) {
+	// Log all MSG messages for debugging
+	log.Printf("handleMSG called with body: %s", body)
+
 	// Parse key=value pairs separated by spaces
 	pairs := splitKeyValue(body)
+
+	log.Printf("Parsed %d key=value pairs from MSG", len(pairs))
+	for k := range pairs {
+		log.Printf("  Key found: %s", k)
+	}
 
 	for key, value := range pairs {
 		switch key {
