@@ -7,7 +7,6 @@ import (
 	"log"
 	"net/url"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
@@ -349,20 +348,12 @@ func (c *KiwiClient) handleMSG(body string) {
 func (c *KiwiClient) parseUserCallback(data string) {
 	// Always log that we received user_cb for debugging
 	log.Printf("Received user_cb message, data length: %d", len(data))
+	log.Printf("Raw user_cb data: %s", data)
 
-	// URL decode the data
-	decoded := strings.ReplaceAll(data, "%20", " ")
-	decoded = strings.ReplaceAll(decoded, "%28", "(")
-	decoded = strings.ReplaceAll(decoded, "%29", ")")
-	decoded = strings.ReplaceAll(decoded, "%2C", ",")
-	decoded = strings.ReplaceAll(decoded, "%2c", ",")
-
-	log.Printf("Decoded user_cb data: %s", decoded)
-
-	// Parse JSON array
+	// Parse JSON array directly - Go's json.Unmarshal handles URL-encoded strings automatically
 	var users []KiwiUser
-	if err := json.Unmarshal([]byte(decoded), &users); err != nil {
-		log.Printf("Failed to parse user_cb JSON: %v, data: %s", err, decoded)
+	if err := json.Unmarshal([]byte(data), &users); err != nil {
+		log.Printf("Failed to parse user_cb JSON: %v, data: %s", err, data)
 		return
 	}
 
