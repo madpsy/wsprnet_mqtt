@@ -3492,11 +3492,6 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             }
         });
 
-        // Spots tab variables
-        let currentSpots = [];
-        let spotSortColumn = 'timestamp';
-        let spotSortAscending = false;
-
         // Load spots data
         async function loadSpots() {
             const sourceFilter = document.getElementById('spotSourceFilter').value;
