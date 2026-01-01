@@ -202,19 +202,29 @@ func (c *KiwiClient) Run() error {
 	return nil
 }
 
-// keepaliveLoop sends periodic keepalive messages
+// keepaliveLoop sends periodic keepalive and user update request messages
 func (c *KiwiClient) keepaliveLoop() {
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
+	keepaliveTicker := time.NewTicker(5 * time.Second)
+	defer keepaliveTicker.Stop()
+
+	usersTicker := time.NewTicker(1 * time.Second)
+	defer usersTicker.Stop()
 
 	for {
 		select {
 		case <-c.stopChan:
 			return
-		case <-ticker.C:
+		case <-keepaliveTicker.C:
 			if err := c.sendMessage("SET keepalive"); err != nil {
 				if !c.config.Quiet {
 					log.Printf("Keepalive send error: %v", err)
+				}
+				return
+			}
+		case <-usersTicker.C:
+			if err := c.sendMessage("SET GET_USERS"); err != nil {
+				if !c.config.Quiet {
+					log.Printf("GET_USERS send error: %v", err)
 				}
 				return
 			}
