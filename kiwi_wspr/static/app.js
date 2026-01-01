@@ -881,21 +881,23 @@ function updateInstanceHeaders() {
             </div>
         `;
 
-        // Attach event listeners to buttons
+        // Re-attach event listeners to buttons after innerHTML replacement
         const actionsDiv = instanceHeader.querySelector('.item-actions');
-        const buttons = actionsDiv.querySelectorAll('button');
-        buttons.forEach(btn => {
-            const action = btn.getAttribute('data-action');
-            if (action === 'info') {
-                btn.addEventListener('click', () => showKiwiInfo(inst.Name));
-            } else if (action === 'toggle') {
-                btn.addEventListener('click', () => toggleInstance(instIdx));
-            } else if (action === 'edit') {
-                btn.addEventListener('click', () => editInstance(instIdx));
-            } else if (action === 'delete') {
-                btn.addEventListener('click', () => deleteInstance(instIdx));
-            }
-        });
+        if (actionsDiv) {
+            const buttons = actionsDiv.querySelectorAll('button');
+            buttons.forEach(btn => {
+                const action = btn.getAttribute('data-action');
+                if (action === 'info') {
+                    btn.addEventListener('click', () => showKiwiInfo(inst.Name));
+                } else if (action === 'toggle') {
+                    btn.addEventListener('click', () => toggleInstance(instIdx));
+                } else if (action === 'edit') {
+                    btn.addEventListener('click', () => editInstance(instIdx));
+                } else if (action === 'delete') {
+                    btn.addEventListener('click', () => deleteInstance(instIdx));
+                }
+            });
+        }
     });
 }
 
