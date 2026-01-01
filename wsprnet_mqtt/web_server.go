@@ -1021,6 +1021,23 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <div id="spotsSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
         </div>
 
+        <!-- Pagination Controls -->
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; padding: 10px; background: #1e293b; border-radius: 8px; border: 1px solid #334155;">
+            <div style="display: flex; gap: 10px; align-items: center;">
+                <span style="color: #94a3b8; font-size: 0.9em;">Results per page:</span>
+                <select id="spotsPerPage" style="padding: 6px 10px; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                    <option value="50">50</option>
+                    <option value="100" selected>100</option>
+                    <option value="250">250</option>
+                    <option value="500">500</option>
+                    <option value="1000">1000</option>
+                    <option value="all">All</option>
+                </select>
+            </div>
+            <div id="spotsPagination" style="display: flex; gap: 5px; align-items: center;">
+            </div>
+        </div>
+
         <!-- Spots Table -->
         <div style="overflow-x: auto;">
             <table id="spotsTable">
@@ -3614,13 +3631,14 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             }
         }
 
-        // Display spots in table
+        // Display spots in table with pagination
         function displaySpots(spots, isDeduped) {
             const tbody = document.getElementById('spotsTableBody');
             
             if (spots.length === 0) {
                 tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #94a3b8;">No spots found for selected filters</td></tr>';
                 document.getElementById('spotsCount').textContent = 'Showing 0 spots';
+                document.getElementById('spotsPagination').innerHTML = '';
                 return;
             }
 
@@ -3647,7 +3665,21 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 }
             });
 
-            tbody.innerHTML = sortedSpots.map(spot => {
+            // Calculate pagination
+            const totalSpots = sortedSpots.length;
+            const perPage = spotsPerPage === 'all' ? totalSpots : parseInt(spotsPerPage);
+            const totalPages = Math.ceil(totalSpots / perPage);
+            
+            // Ensure current page is valid
+            if (currentPage > totalPages) currentPage = totalPages;
+            if (currentPage < 1) currentPage = 1;
+            
+            // Get spots for current page
+            const startIdx = (currentPage - 1) * perPage;
+            const endIdx = spotsPerPage === 'all' ? totalSpots : Math.min(startIdx + perPage, totalSpots);
+            const pageSpots = sortedSpots.slice(startIdx, endIdx);
+
+            tbody.innerHTML = pageSpots.map(spot => {
                 const timestamp = new Date(spot.timestamp);
                 const freqMHz = (spot.frequency / 1000000).toFixed(4);
                 
@@ -3678,7 +3710,79 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 ` + "`" + `;
             }).join('');
 
-            document.getElementById('spotsCount').textContent = ` + "`" + `Showing ${spots.length} spot${spots.length !== 1 ? 's' : ''}` + "`" + `;
+            // Update count and pagination
+            document.getElementById('spotsCount').textContent = ` + "`" + `Showing ${startIdx + 1}-${endIdx} of ${totalSpots} spot${totalSpots !== 1 ? 's' : ''}` + "`" + `;
+            updatePagination(totalPages);
+        }
+
+        // Update pagination controls
+        function updatePagination(totalPages) {
+            const container = document.getElementById('spotsPagination');
+            
+            if (totalPages <= 1) {
+                container.innerHTML = '';
+                return;
+            }
+
+            let html = '';
+            
+            // Previous button
+            html += ` + "`" + `
+                <button class="control-btn" onclick="changePage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''}
+                    style="${currentPage === 1 ? 'opacity: 0.3; cursor: not-allowed;' : ''}">
+                    ← Prev
+                </button>
+            ` + "`" + `;
+
+            // Page numbers
+            const maxButtons = 5;
+            let startPage = Math.max(1, currentPage - Math.floor(maxButtons / 2));
+            let endPage = Math.min(totalPages, startPage + maxButtons - 1);
+            
+            if (endPage - startPage < maxButtons - 1) {
+                startPage = Math.max(1, endPage - maxButtons + 1);
+            }
+
+            if (startPage > 1) {
+                html += ` + "`" + `<button class="control-btn" onclick="changePage(1)">1</button>` + "`" + `;
+                if (startPage > 2) {
+                    html += ` + "`" + `<span style="color: #94a3b8; padding: 0 5px;">...</span>` + "`" + `;
+                }
+            }
+
+            for (let i = startPage; i <= endPage; i++) {
+                const isActive = i === currentPage;
+                html += ` + "`" + `
+                    <button class="control-btn" onclick="changePage(${i})"
+                        style="${isActive ? 'background: #60a5fa; border-color: #60a5fa; color: white;' : ''}">
+                        ${i}
+                    </button>
+                ` + "`" + `;
+            }
+
+            if (endPage < totalPages) {
+                if (endPage < totalPages - 1) {
+                    html += ` + "`" + `<span style="color: #94a3b8; padding: 0 5px;">...</span>` + "`" + `;
+                }
+                html += ` + "`" + `<button class="control-btn" onclick="changePage(${totalPages})">${totalPages}</button>` + "`" + `;
+            }
+
+            // Next button
+            html += ` + "`" + `
+                <button class="control-btn" onclick="changePage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''}
+                    style="${currentPage === totalPages ? 'opacity: 0.3; cursor: not-allowed;' : ''}">
+                    Next →
+                </button>
+            ` + "`" + `;
+
+            container.innerHTML = html;
+        }
+
+        // Change page
+        function changePage(page) {
+            currentPage = page;
+            const sourceFilter = document.getElementById('spotSourceFilter').value;
+            displaySpots(currentSpots, sourceFilter === 'deduped');
         }
 
         // Export spots to CSV
@@ -3726,6 +3830,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         let spotSortColumn = 'timestamp';
         let spotSortAscending = false;
         let selectedSpotBand = 'all';
+        let currentPage = 1;
+        let spotsPerPage = 100;
 
         // Load spots data
         async function loadSpots() {
@@ -3782,6 +3888,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
         function setSpotBandFilter(band) {
             selectedSpotBand = band;
+            currentPage = 1;
             
             document.querySelectorAll('#spotBandButtons .filter-btn').forEach(btn => {
                 if (btn.dataset.band === band) {
@@ -3836,13 +3943,29 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 const sourceFilter = document.getElementById('spotSourceFilter').value;
                 const submittedFilter = document.getElementById('spotSubmittedFilter').parentElement;
                 submittedFilter.style.display = sourceFilter === 'deduped' ? 'block' : 'none';
+                currentPage = 1;
                 loadSpots();
             });
-            document.getElementById('spotTimeFilter').addEventListener('change', loadSpots);
-            document.getElementById('spotSubmittedFilter').addEventListener('change', loadSpots);
+            document.getElementById('spotTimeFilter').addEventListener('change', () => {
+                currentPage = 1;
+                loadSpots();
+            });
+            document.getElementById('spotSubmittedFilter').addEventListener('change', () => {
+                currentPage = 1;
+                loadSpots();
+            });
+            
+            // Per-page selector
+            document.getElementById('spotsPerPage').addEventListener('change', (e) => {
+                spotsPerPage = e.target.value;
+                currentPage = 1;
+                const sourceFilter = document.getElementById('spotSourceFilter').value;
+                displaySpots(currentSpots, sourceFilter === 'deduped');
+            });
             
             // Real-time callsign search
             document.getElementById('spotCallsignSearch').addEventListener('input', () => {
+                currentPage = 1;
                 const sourceFilter = document.getElementById('spotSourceFilter').value;
                 filterAndDisplaySpots(sourceFilter === 'deduped');
             });
