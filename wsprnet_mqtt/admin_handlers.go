@@ -300,7 +300,15 @@ func (ah *AdminHandler) HandleSyncKiwis(w http.ResponseWriter, r *http.Request) 
 	// Try to load kiwi_wspr config
 	kiwiConfig, err := LoadKiwiWSPRConfig("/app/kiwi_wspr_data/config.yaml")
 	if err != nil {
-		http.Error(w, fmt.Sprintf("Failed to load kiwi_wspr config: %v", err), http.StatusInternalServerError)
+		// Return a user-friendly error message
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "error",
+			"message": "Unable to access kiwi_wspr configuration",
+			"details": "Make sure the kiwi-wspr container is running and has created its config file. You may need to restart both containers with 'docker-compose restart'.",
+			"error":   err.Error(),
+		})
 		return
 	}
 
@@ -1260,8 +1268,17 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 });
 
                 if (!previewResponse.ok) {
-                    const error = await previewResponse.text();
-                    throw new Error(error);
+                    // Try to parse error response as JSON
+                    let errorData;
+                    try {
+                        errorData = await previewResponse.json();
+                    } catch (e) {
+                        errorData = { message: await previewResponse.text() };
+                    }
+                    
+                    // Show error modal
+                    showErrorModal(errorData);
+                    return;
                 }
 
                 const preview = await previewResponse.json();
@@ -1269,8 +1286,53 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 // Always show modal, even if no changes
                 showSyncModal(preview.changes, preview.message);
             } catch (error) {
-                showMessage('❌ Failed to check kiwi instances: ' + error.message, 'error');
+                showErrorModal({ message: 'Failed to check kiwi instances', error: error.message });
             }
+        }
+
+        // Show error modal
+        function showErrorModal(errorData) {
+            // Create modal overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; animation: fadeIn 0.3s;';
+
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background: #1e293b; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; border: 2px solid #ef4444;';
+
+            const title = document.createElement('h2');
+            title.style.cssText = 'color: #ef4444; margin-bottom: 20px; font-size: 24px;';
+            title.textContent = '❌ Sync Failed';
+
+            const errorBox = document.createElement('div');
+            errorBox.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; padding: 20px; border-radius: 8px; margin-bottom: 20px;';
+            
+            let errorHTML = ` + "`" + `<div style="color: #fca5a5; font-weight: 600; margin-bottom: 10px;">${errorData.message || 'An error occurred'}</div>` + "`" + `;
+            
+            if (errorData.details) {
+                errorHTML += ` + "`" + `<div style="color: #94a3b8; margin-top: 10px; font-size: 0.9em;">${errorData.details}</div>` + "`" + `;
+            }
+            
+            if (errorData.error) {
+                errorHTML += ` + "`" + `<div style="color: #64748b; margin-top: 10px; font-size: 0.85em; font-family: monospace;">${errorData.error}</div>` + "`" + `;
+            }
+            
+            errorBox.innerHTML = errorHTML;
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
+
+            const okBtn = document.createElement('button');
+            okBtn.textContent = 'OK';
+            okBtn.className = 'btn';
+            okBtn.onclick = () => document.body.removeChild(overlay);
+
+            buttonContainer.appendChild(okBtn);
+
+            modal.appendChild(title);
+            modal.appendChild(errorBox);
+            modal.appendChild(buttonContainer);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
         }
 
         // Show modal with sync changes
