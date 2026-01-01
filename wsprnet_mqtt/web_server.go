@@ -21,10 +21,11 @@ type WebServer struct {
 	adminHandler *AdminHandler
 	configFile   string
 	mqttClient   *MQTTClient
+	spotWriter   *SpotWriter
 }
 
 // NewWebServer creates a new web server
-func NewWebServer(stats *StatisticsTracker, aggregator *SpotAggregator, wsprnet *WSPRNet, config *Config, port int, configFile string, mqttClient *MQTTClient) *WebServer {
+func NewWebServer(stats *StatisticsTracker, aggregator *SpotAggregator, wsprnet *WSPRNet, config *Config, port int, configFile string, mqttClient *MQTTClient, spotWriter *SpotWriter) *WebServer {
 	return &WebServer{
 		stats:        stats,
 		aggregator:   aggregator,
@@ -34,6 +35,7 @@ func NewWebServer(stats *StatisticsTracker, aggregator *SpotAggregator, wsprnet 
 		adminHandler: NewAdminHandler(config, configFile),
 		configFile:   configFile,
 		mqttClient:   mqttClient,
+		spotWriter:   spotWriter,
 	}
 }
 
@@ -52,6 +54,11 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/api/instance-performance", ws.handleInstancePerformance)
 	http.HandleFunc("/api/instance-performance-raw", ws.handleInstancePerformanceRaw)
 	http.HandleFunc("/api/mqtt/status", ws.handleMQTTStatus)
+
+	// Spot history endpoints
+	http.HandleFunc("/api/spots/raw", ws.handleRawSpots)
+	http.HandleFunc("/api/spots/deduped", ws.handleDedupedSpots)
+	http.HandleFunc("/api/spots/instances", ws.handleSpotInstances)
 
 	// Admin endpoints
 	http.HandleFunc("/admin/login", ws.adminHandler.HandleAdminLogin)
@@ -766,6 +773,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <div class="tab" onclick="switchTab('value')">💎 Value</div>
         <div class="tab" onclick="switchTab('snr')">📈 SNR</div>
         <div class="tab" onclick="switchTab('countries')">🌍 Countries</div>
+        <div class="tab" onclick="switchTab('spots')">📍 Spots</div>
     </div>
 
     <!-- Overview Tab -->
@@ -957,6 +965,84 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
     </div>
     </div>
     <!-- End Countries Tab -->
+
+    <!-- Spots Tab -->
+    <div id="spots" class="tab-content">
+    <div class="chart-container">
+        <div class="chart-title">📍 Spot History (24 Hours)</div>
+        
+        <!-- Filters -->
+        <div class="filter-container">
+            <div class="filter-title">Filters</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Source</label>
+                    <select id="spotSourceFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="deduped">Deduped Spots (Sent to WSPRNet)</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Band</label>
+                    <select id="spotBandFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="">All Bands</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Time Range</label>
+                    <select id="spotTimeFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="1">Last 1 Hour</option>
+                        <option value="6">Last 6 Hours</option>
+                        <option value="12">Last 12 Hours</option>
+                        <option value="24" selected>Last 24 Hours</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Submission Status</label>
+                    <select id="spotSubmittedFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="">All</option>
+                        <option value="true">Successfully Sent</option>
+                        <option value="false">Failed to Send</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
+                <button class="control-btn" onclick="loadSpots()">🔄 Refresh</button>
+                <button class="control-btn" onclick="exportSpots()">💾 Export CSV</button>
+            </div>
+        </div>
+
+        <!-- Stats Summary -->
+        <div id="spotsSummary" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px;">
+        </div>
+
+        <!-- Spots Table -->
+        <div style="overflow-x: auto;">
+            <table id="spotsTable">
+                <thead>
+                    <tr>
+                        <th class="sortable" data-column="timestamp" data-type="date">Timestamp</th>
+                        <th class="sortable" data-column="callsign" data-type="string">Callsign</th>
+                        <th class="sortable" data-column="locator" data-type="string">Locator</th>
+                        <th class="sortable" data-column="snr" data-type="number">SNR</th>
+                        <th class="sortable" data-column="frequency" data-type="number">Frequency</th>
+                        <th class="sortable" data-column="band" data-type="string">Band</th>
+                        <th class="sortable" data-column="dbm" data-type="number">Power</th>
+                        <th class="sortable" data-column="instance" data-type="string">Instance</th>
+                        <th class="sortable" data-column="submitted" data-type="boolean">Status</th>
+                    </tr>
+                </thead>
+                <tbody id="spotsTableBody">
+                    <tr><td colspan="9" style="text-align: center; padding: 40px; color: #94a3b8;">Loading spots...</td></tr>
+                </tbody>
+            </table>
+        </div>
+        
+        <div id="spotsCount" style="text-align: center; color: #94a3b8; margin-top: 15px; font-size: 0.9em;">
+            Showing 0 spots
+        </div>
+    </div>
+    </div>
+    <!-- End Spots Tab -->
 
     <div class="last-update">
         Last updated: <span id="lastUpdate">-</span> | Auto-refresh every 120 seconds | <a href="/admin" style="color: #60a5fa; text-decoration: none;">⚙️ Admin</a>
@@ -3334,18 +3420,388 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             }
         });
 
+        // Spots tab variables
+        let currentSpots = [];
+        let spotSortColumn = 'timestamp';
+        let spotSortAscending = false;
+
+        // Load spots data
+        async function loadSpots() {
+            const sourceFilter = document.getElementById('spotSourceFilter').value;
+            const bandFilter = document.getElementById('spotBandFilter').value;
+            const timeFilter = parseInt(document.getElementById('spotTimeFilter').value);
+            const submittedFilter = document.getElementById('spotSubmittedFilter').value;
+
+            // Calculate time range
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - (timeFilter * 60 * 60 * 1000));
+
+            try {
+                let url;
+                const params = new URLSearchParams();
+                
+                if (bandFilter) params.append('band', bandFilter);
+                params.append('start_time', startTime.toISOString());
+                params.append('end_time', endTime.toISOString());
+
+                if (sourceFilter === 'deduped') {
+                    if (submittedFilter) params.append('submitted', submittedFilter);
+                    url = '/api/spots/deduped?' + params.toString();
+                } else {
+                    params.append('instance', sourceFilter);
+                    url = '/api/spots/raw?' + params.toString();
+                }
+
+                const response = await fetch(url);
+                currentSpots = await response.json();
+
+                // Update summary
+                updateSpotsSummary(currentSpots, sourceFilter === 'deduped');
+
+                // Display spots
+                displaySpots(currentSpots, sourceFilter === 'deduped');
+            } catch (error) {
+                console.error('Error loading spots:', error);
+                document.getElementById('spotsTableBody').innerHTML =
+                    '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #ef4444;">Error loading spots</td></tr>';
+            }
+        }
+
+        // Update spots summary
+        function updateSpotsSummary(spots, isDeduped) {
+            const container = document.getElementById('spotsSummary');
+            
+            const totalSpots = spots.length;
+            let successfulSpots = 0;
+            let failedSpots = 0;
+            const uniqueCallsigns = new Set();
+            const bands = new Set();
+
+            spots.forEach(spot => {
+                uniqueCallsigns.add(spot.callsign);
+                bands.add(spot.band);
+                if (isDeduped) {
+                    if (spot.submitted) successfulSpots++;
+                    else failedSpots++;
+                }
+            });
+
+            let html = ` + "`" + `
+                <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Total Spots</div>
+                    <div style="font-size: 1.5em; font-weight: bold; color: #60a5fa;">${totalSpots}</div>
+                </div>
+                <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Unique Callsigns</div>
+                    <div style="font-size: 1.5em; font-weight: bold; color: #10b981;">${uniqueCallsigns.size}</div>
+                </div>
+                <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                    <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Bands Active</div>
+                    <div style="font-size: 1.5em; font-weight: bold; color: #8b5cf6;">${bands.size}</div>
+                </div>
+            ` + "`" + `;
+
+            if (isDeduped) {
+                html += ` + "`" + `
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                        <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Successfully Sent</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #10b981;">${successfulSpots}</div>
+                    </div>
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                        <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Failed to Send</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #ef4444;">${failedSpots}</div>
+                    </div>
+                ` + "`" + `;
+            }
+
+            container.innerHTML = html;
+        }
+
+        // Display spots in table
+        function displaySpots(spots, isDeduped) {
+            const tbody = document.getElementById('spotsTableBody');
+            
+            if (spots.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; padding: 40px; color: #94a3b8;">No spots found for selected filters</td></tr>';
+                document.getElementById('spotsCount').textContent = 'Showing 0 spots';
+                return;
+            }
+
+            // Sort spots
+            const sortedSpots = [...spots].sort((a, b) => {
+                let aVal = a[spotSortColumn];
+                let bVal = b[spotSortColumn];
+
+                if (spotSortColumn === 'timestamp') {
+                    aVal = new Date(aVal).getTime();
+                    bVal = new Date(bVal).getTime();
+                } else if (spotSortColumn === 'frequency') {
+                    aVal = parseInt(aVal);
+                    bVal = parseInt(bVal);
+                } else if (typeof aVal === 'string') {
+                    aVal = aVal.toLowerCase();
+                    bVal = bVal.toLowerCase();
+                }
+
+                if (spotSortAscending) {
+                    return aVal > bVal ? 1 : aVal < bVal ? -1 : 0;
+                } else {
+                    return aVal < bVal ? 1 : aVal > bVal ? -1 : 0;
+                }
+            });
+
+            tbody.innerHTML = sortedSpots.map(spot => {
+                const timestamp = new Date(spot.timestamp);
+                const freqMHz = (spot.frequency / 1000000).toFixed(4);
+                
+                let statusHtml = '';
+                if (isDeduped) {
+                    if (spot.submitted) {
+                        statusHtml = '<span class="badge badge-success">✓ Sent</span>';
+                    } else {
+                        const errorMsg = spot.error || 'Unknown error';
+                        statusHtml = ` + "`" + `<span class="badge" style="background: #ef4444; color: white;" title="${errorMsg}">✗ Failed</span>` + "`" + `;
+                    }
+                }
+
+                return ` + "`" + `
+                    <tr>
+                        <td>${timestamp.toLocaleString()}</td>
+                        <td><strong>${spot.callsign}</strong></td>
+                        <td>${spot.locator}</td>
+                        <td style="color: ${spot.snr >= 0 ? '#10b981' : '#ef4444'};">${spot.snr > 0 ? '+' : ''}${spot.snr} dB</td>
+                        <td>${freqMHz} MHz</td>
+                        <td><span class="badge badge-warning">${spot.band}</span></td>
+                        <td>${spot.dbm} dBm</td>
+                        <td>${spot.instance || '-'}</td>
+                        <td>${statusHtml}</td>
+                    </tr>
+                ` + "`" + `;
+            }).join('');
+
+            document.getElementById('spotsCount').textContent = ` + "`" + `Showing ${spots.length} spot${spots.length !== 1 ? 's' : ''}` + "`" + `;
+        }
+
+        // Export spots to CSV
+        function exportSpots() {
+            if (currentSpots.length === 0) {
+                alert('No spots to export');
+                return;
+            }
+
+            const sourceFilter = document.getElementById('spotSourceFilter').value;
+            const isDeduped = sourceFilter === 'deduped';
+
+            let csv = 'Timestamp,Callsign,Locator,SNR,Frequency,Band,Power,';
+            if (isDeduped) {
+                csv += 'Instance,Submitted,Error\n';
+            } else {
+                csv += 'Country\n';
+            }
+
+            currentSpots.forEach(spot => {
+                const timestamp = new Date(spot.timestamp).toISOString();
+                const freqMHz = (spot.frequency / 1000000).toFixed(4);
+                
+                csv += ` + "`" + `${timestamp},${spot.callsign},${spot.locator},${spot.snr},${freqMHz},${spot.band},${spot.dbm},` + "`" + `;
+                
+                if (isDeduped) {
+                    csv += ` + "`" + `${spot.instance || ''},${spot.submitted ? 'Yes' : 'No'},"${spot.error || ''}"\n` + "`" + `;
+                } else {
+                    csv += ` + "`" + `${spot.country || ''}\n` + "`" + `;
+                }
+            });
+
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = ` + "`" + `wspr_spots_${new Date().toISOString().split('T')[0]}.csv` + "`" + `;
+            a.click();
+            window.URL.revokeObjectURL(url);
+        }
+
+        // Initialize spots tab
+        async function initSpotsTab() {
+            // Load instance names
+            try {
+                const instances = await fetch('/api/spots/instances').then(r => r.json());
+                const sourceSelect = document.getElementById('spotSourceFilter');
+                
+                instances.sort().forEach(instance => {
+                    const option = document.createElement('option');
+                    option.value = instance;
+                    option.textContent = ` + "`" + `Instance: ${instance}` + "`" + `;
+                    sourceSelect.appendChild(option);
+                });
+            } catch (error) {
+                console.error('Error loading instances:', error);
+            }
+
+            // Populate band filter
+            const bandSelect = document.getElementById('spotBandFilter');
+            const bands = ['2200m', '630m', '160m', '80m', '60m', '40m', '30m', '20m', '17m', '15m', '12m', '10m'];
+            bands.forEach(band => {
+                const option = document.createElement('option');
+                option.value = band;
+                option.textContent = band;
+                bandSelect.appendChild(option);
+            });
+
+            // Add event listeners for filters
+            document.getElementById('spotSourceFilter').addEventListener('change', () => {
+                // Show/hide submission status filter based on source
+                const sourceFilter = document.getElementById('spotSourceFilter').value;
+                const submittedFilter = document.getElementById('spotSubmittedFilter').parentElement;
+                submittedFilter.style.display = sourceFilter === 'deduped' ? 'block' : 'none';
+                loadSpots();
+            });
+            document.getElementById('spotBandFilter').addEventListener('change', loadSpots);
+            document.getElementById('spotTimeFilter').addEventListener('change', loadSpots);
+            document.getElementById('spotSubmittedFilter').addEventListener('change', loadSpots);
+
+            // Add sorting to table headers
+            document.querySelectorAll('#spotsTable .sortable').forEach(header => {
+                header.addEventListener('click', function() {
+                    const column = this.dataset.column;
+                    
+                    // Toggle sort direction
+                    if (spotSortColumn === column) {
+                        spotSortAscending = !spotSortAscending;
+                    } else {
+                        spotSortColumn = column;
+                        spotSortAscending = false;
+                    }
+
+                    // Update header classes
+                    document.querySelectorAll('#spotsTable .sortable').forEach(h => {
+                        h.classList.remove('asc', 'desc');
+                    });
+                    this.classList.add(spotSortAscending ? 'asc' : 'desc');
+
+                    // Re-display with new sort
+                    const sourceFilter = document.getElementById('spotSourceFilter').value;
+                    displaySpots(currentSpots, sourceFilter === 'deduped');
+                });
+            });
+
+            // Initial load
+            loadSpots();
+        }
+
         // Initialize map and filters on load
         initMap();
         initBandFilters();
+        initSpotsTab();
 
         // Initial load
         fetchData();
 
         // Auto-refresh every 120 seconds
         setInterval(fetchData, 120000);
+        
+        // Auto-refresh spots tab every 120 seconds if active
+        setInterval(() => {
+            const spotsTab = document.getElementById('spots');
+            if (spotsTab && spotsTab.classList.contains('active')) {
+                loadSpots();
+            }
+        }, 120000);
     </script>
 </body>
 </html>`
 
 	_, _ = w.Write([]byte(html))
+}
+
+// handleRawSpots returns raw spots from instances with optional filters
+func (ws *WebServer) handleRawSpots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if ws.spotWriter == nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Spot writer not initialized",
+			"spots": []interface{}{},
+		})
+		return
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	instance := query.Get("instance")
+	band := query.Get("band")
+	startTimeStr := query.Get("start_time")
+	endTimeStr := query.Get("end_time")
+
+	var startTime, endTime time.Time
+	if startTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+			startTime = t
+		}
+	}
+	if endTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+			endTime = t
+		}
+	}
+
+	spots := ws.spotWriter.GetRawSpots(instance, band, startTime, endTime)
+	_ = json.NewEncoder(w).Encode(spots)
+}
+
+// handleDedupedSpots returns deduped spots with optional filters
+func (ws *WebServer) handleDedupedSpots(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if ws.spotWriter == nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Spot writer not initialized",
+			"spots": []interface{}{},
+		})
+		return
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	band := query.Get("band")
+	startTimeStr := query.Get("start_time")
+	endTimeStr := query.Get("end_time")
+	submittedStr := query.Get("submitted")
+
+	var startTime, endTime time.Time
+	if startTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+			startTime = t
+		}
+	}
+	if endTimeStr != "" {
+		if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+			endTime = t
+		}
+	}
+
+	var submittedOnly *bool
+	if submittedStr != "" {
+		val := submittedStr == "true"
+		submittedOnly = &val
+	}
+
+	spots := ws.spotWriter.GetDedupedSpots(band, startTime, endTime, submittedOnly)
+	_ = json.NewEncoder(w).Encode(spots)
+}
+
+// handleSpotInstances returns list of instance names that have spots
+func (ws *WebServer) handleSpotInstances(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if ws.spotWriter == nil {
+		_ = json.NewEncoder(w).Encode([]string{})
+		return
+	}
+
+	instances := ws.spotWriter.GetInstanceNames()
+	_ = json.NewEncoder(w).Encode(instances)
 }

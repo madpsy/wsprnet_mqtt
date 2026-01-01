@@ -13,6 +13,7 @@ type SpotAggregator struct {
 	wsprNet         *WSPRNet
 	stats           *StatisticsTracker
 	persistenceFile string
+	spotWriter      *SpotWriter
 
 	// Map of 2-minute windows to spots
 	// Key: timestamp rounded to 2-minute boundary
@@ -43,11 +44,12 @@ type WSPRReportWithSource struct {
 }
 
 // NewSpotAggregator creates a new spot aggregator
-func NewSpotAggregator(wsprNet *WSPRNet, stats *StatisticsTracker, persistenceFile string) *SpotAggregator {
+func NewSpotAggregator(wsprNet *WSPRNet, stats *StatisticsTracker, persistenceFile string, spotWriter *SpotWriter) *SpotAggregator {
 	return &SpotAggregator{
 		wsprNet:         wsprNet,
 		stats:           stats,
 		persistenceFile: persistenceFile,
+		spotWriter:      spotWriter,
 		windows:         make(map[int64]map[string]*WSPRReportWithSource),
 		duplicates:      make(map[int64]map[string][]*WSPRReportWithSource),
 		spotChan:        make(chan *WSPRReportWithSource, 1000),
@@ -132,6 +134,13 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 
 	// Determine band
 	band := frequencyToBand(report.ReceiverFreq)
+
+	// Write raw spot to file
+	if sa.spotWriter != nil {
+		if err := sa.spotWriter.WriteRaw(report); err != nil {
+			log.Printf("Warning: Failed to write raw spot: %v", err)
+		}
+	}
 
 	// Record spot in statistics
 	sa.stats.RecordSpot(report.InstanceName, band, report.Callsign, report.Country, report.Locator, report.SNR)
@@ -395,8 +404,19 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 				report.InstanceName)
 
 			// Submit to WSPRNet
-			if err := sa.wsprNet.Submit(report.WSPRReport); err != nil {
+			err := sa.wsprNet.Submit(report.WSPRReport)
+			submitted := (err == nil)
+			errorMsg := ""
+			if err != nil {
+				errorMsg = err.Error()
 				log.Printf("    ERROR: Failed to submit: %v", err)
+			}
+
+			// Write deduped spot with submission status
+			if sa.spotWriter != nil {
+				if writeErr := sa.spotWriter.WriteDeduped(report, submitted, errorMsg); writeErr != nil {
+					log.Printf("    Warning: Failed to write deduped spot: %v", writeErr)
+				}
 			}
 		}
 

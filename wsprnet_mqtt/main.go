@@ -90,8 +90,15 @@ func main() {
 		}
 	}
 
+	// Initialize spot writer for 24-hour rolling window
+	spotWriter, err := NewSpotWriter("./spots")
+	if err != nil {
+		log.Fatalf("Failed to initialize spot writer: %v", err)
+	}
+	defer spotWriter.Stop()
+
 	// Initialize spot aggregator for deduplication
-	aggregator := NewSpotAggregator(wsprNet, stats, config.PersistenceFile)
+	aggregator := NewSpotAggregator(wsprNet, stats, config.PersistenceFile, spotWriter)
 	aggregator.Start()
 	defer aggregator.Stop()
 
@@ -112,7 +119,7 @@ func main() {
 	log.Println("MQTT client connected and subscribed")
 
 	// Initialize web server (after MQTT client so it can access status)
-	webServer := NewWebServer(stats, aggregator, wsprNet, config, config.WebPort, *configFile, mqttClient)
+	webServer := NewWebServer(stats, aggregator, wsprNet, config, config.WebPort, *configFile, mqttClient, spotWriter)
 	if err := webServer.Start(); err != nil {
 		log.Fatalf("Failed to start web server: %v", err)
 	}
