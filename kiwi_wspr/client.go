@@ -592,7 +592,23 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 	// Reset start time for new recording
 	c.startTime = time.Now()
 
-	log.Printf("Ready to start new WAV file: %s", filename)
+	// Immediately create the new WAV file to avoid race conditions
+	fullPath := fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
+	var err error
+	c.outputFile, err = os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+
+	c.wavWriter = NewWAVWriter(c.outputFile, int(c.sampleRate), c.numChannels)
+	if err := c.wavWriter.WriteHeader(); err != nil {
+		c.outputFile.Close()
+		c.outputFile = nil
+		c.wavWriter = nil
+		return fmt.Errorf("failed to write WAV header: %w", err)
+	}
+
+	log.Printf("Started recording to: %s", fullPath)
 	return nil
 }
 

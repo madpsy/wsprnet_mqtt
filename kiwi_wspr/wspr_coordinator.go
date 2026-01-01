@@ -324,10 +324,8 @@ func (wc *WSPRCoordinator) recordingLoop() {
 				}
 			}
 
-			// Clean up WAV file only if not in one-shot mode and not configured to keep
-			if !wc.oneShot && wc.config.Filename == "" {
-				os.Remove(file)
-			}
+			// Note: WAV file cleanup is now handled inside decodeCycle()
+			// No need to clean up here anymore
 
 			// Notify manager if in one-shot mode
 			if wc.oneShot && wc.manager != nil {
@@ -475,31 +473,20 @@ func (wc *WSPRCoordinator) decodeCycle(wavFile string, cycleStart time.Time) ([]
 		return nil, fmt.Errorf("failed to resample WAV file: %w", err)
 	}
 
-	// Clean up resampled file after decoding (if it's different from original and not in one-shot mode)
-	if resampledFile != wavFile && !wc.oneShot {
-		defer os.Remove(resampledFile)
-	}
-
 	// Rename to wsprd-compatible format: YYMMDD_HHMM.wav
 	// wsprd expects this format to extract timestamp information
 	wsprdFilename := filepath.Join(wc.workDir, fmt.Sprintf("%02d%02d%02d_%02d%02d.wav",
 		cycleStart.Year()%100, cycleStart.Month(), cycleStart.Day(),
 		cycleStart.Hour(), cycleStart.Minute()))
 
-	// Remove original WAV file and rename resampled file
+	// Remove original WAV file if resampling created a new file
 	if resampledFile != wavFile {
 		os.Remove(wavFile) // Remove original non-resampled file
 	}
 
+	// Rename resampled file to wsprd format
 	if err := os.Rename(resampledFile, wsprdFilename); err != nil {
 		return nil, fmt.Errorf("failed to rename resampled file: %w", err)
-	}
-
-	// Restore the original filename after wsprd completes (if not in one-shot mode)
-	if !wc.oneShot {
-		defer func() {
-			os.Rename(wsprdFilename, resampledFile)
-		}()
 	}
 
 	// Build command - wsprd expects just the filename without path when run in the directory
@@ -530,6 +517,12 @@ func (wc *WSPRCoordinator) decodeCycle(wavFile string, cycleStart time.Time) ([]
 	decodes, err := wc.parseWSPRSpots(spotsFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse spots: %w", err)
+	}
+
+	// Clean up the wsprd-formatted WAV file after decoding (unless in one-shot mode)
+	if !wc.oneShot {
+		os.Remove(wsprdFilename)
+		log.Printf("WSPR Coordinator: Cleaned up WAV file: %s", filepath.Base(wsprdFilename))
 	}
 
 	return decodes, nil
