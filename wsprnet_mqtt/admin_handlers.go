@@ -1266,21 +1266,15 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
 
                 const preview = await previewResponse.json();
 
-                // If no changes, just show message
-                if (preview.changes.length === 0) {
-                    showMessage('✅ ' + preview.message, 'success');
-                    return;
-                }
-
-                // Show modal with changes
-                showSyncModal(preview.changes);
+                // Always show modal, even if no changes
+                showSyncModal(preview.changes, preview.message);
             } catch (error) {
                 showMessage('❌ Failed to check kiwi instances: ' + error.message, 'error');
             }
         }
 
         // Show modal with sync changes
-        function showSyncModal(changes) {
+        function showSyncModal(changes, message) {
             // Create modal overlay
             const overlay = document.createElement('div');
             overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; animation: fadeIn 0.3s;';
@@ -1292,14 +1286,27 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
             title.style.cssText = 'color: #60a5fa; margin-bottom: 20px; font-size: 24px;';
             title.textContent = '🔄 Sync Kiwi Instances';
 
-            const description = document.createElement('p');
-            description.style.cssText = 'color: #94a3b8; margin-bottom: 20px;';
-            description.textContent = 'The following changes will be applied:';
-
             const changesList = document.createElement('div');
             changesList.style.cssText = 'margin-bottom: 20px;';
 
-            changes.forEach(change => {
+            if (changes.length === 0) {
+                // No changes - show success message
+                const noChanges = document.createElement('div');
+                noChanges.style.cssText = 'background: rgba(16, 185, 129, 0.1); border: 1px solid #10b981; padding: 20px; border-radius: 8px; text-align: center;';
+                noChanges.innerHTML = ` + "`" + `
+                    <div style="font-size: 48px; margin-bottom: 10px;">✅</div>
+                    <div style="color: #10b981; font-weight: 600; font-size: 18px; margin-bottom: 5px;">All Synced!</div>
+                    <div style="color: #94a3b8;">${message || 'No changes needed - all instances are already in sync'}</div>
+                ` + "`" + `;
+                changesList.appendChild(noChanges);
+            } else {
+                // Show description
+                const description = document.createElement('p');
+                description.style.cssText = 'color: #94a3b8; margin-bottom: 20px;';
+                description.textContent = 'The following changes will be applied:';
+                modal.appendChild(description);
+
+                changes.forEach(change => {
                 const changeItem = document.createElement('div');
                 changeItem.style.cssText = 'background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ' + (change.type === 'add' ? '#10b981' : '#f59e0b');
 
@@ -1317,36 +1324,48 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                     ` + "`" + `;
                 }
 
-                changesList.appendChild(changeItem);
-            });
+                    changesList.appendChild(changeItem);
+                });
 
-            const warning = document.createElement('div');
-            warning.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;';
-            warning.innerHTML = '<div style="color: #ef4444; font-weight: 600; margin-bottom: 5px;">⚠️ Warning</div><div style="color: #fca5a5;">Saving these changes will restart the application.</div>';
+                // Show warning
+                const warning = document.createElement('div');
+                warning.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;';
+                warning.innerHTML = '<div style="color: #ef4444; font-weight: 600; margin-bottom: 5px;">⚠️ Warning</div><div style="color: #fca5a5;">Saving these changes will restart the application.</div>';
+                modal.appendChild(changesList);
+                modal.appendChild(warning);
+            }
 
             const buttonContainer = document.createElement('div');
             buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
 
-            const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = 'Cancel';
-            cancelBtn.className = 'btn btn-secondary';
-            cancelBtn.onclick = () => document.body.removeChild(overlay);
+            if (changes.length === 0) {
+                // Only show OK button if no changes
+                const okBtn = document.createElement('button');
+                okBtn.textContent = 'OK';
+                okBtn.className = 'btn';
+                okBtn.onclick = () => document.body.removeChild(overlay);
+                buttonContainer.appendChild(okBtn);
+            } else {
+                // Show Cancel and Save buttons if there are changes
+                const cancelBtn = document.createElement('button');
+                cancelBtn.textContent = 'Cancel';
+                cancelBtn.className = 'btn btn-secondary';
+                cancelBtn.onclick = () => document.body.removeChild(overlay);
 
-            const saveBtn = document.createElement('button');
-            saveBtn.textContent = '💾 Save & Restart';
-            saveBtn.className = 'btn';
-            saveBtn.onclick = async () => {
-                document.body.removeChild(overlay);
-                await applySyncChanges();
-            };
+                const saveBtn = document.createElement('button');
+                saveBtn.textContent = '💾 Save & Restart';
+                saveBtn.className = 'btn';
+                saveBtn.onclick = async () => {
+                    document.body.removeChild(overlay);
+                    await applySyncChanges();
+                };
 
-            buttonContainer.appendChild(cancelBtn);
-            buttonContainer.appendChild(saveBtn);
+                buttonContainer.appendChild(cancelBtn);
+                buttonContainer.appendChild(saveBtn);
+            }
 
             modal.appendChild(title);
-            modal.appendChild(description);
             modal.appendChild(changesList);
-            modal.appendChild(warning);
             modal.appendChild(buttonContainer);
             overlay.appendChild(modal);
             document.body.appendChild(overlay);
