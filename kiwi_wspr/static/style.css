@@ -172,7 +172,7 @@ input:focus, select:focus {
 
 /* Modal styles */
 .modal {
-    display: none;
+    display: flex;
     position: fixed;
     top: 0;
     left: 0;
@@ -182,12 +182,19 @@ input:focus, select:focus {
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    pointer-events: none;
 }
 
 .modal.show {
     display: flex;
-    pointer-events: auto;
+}
+
+/* Hide the users modal by default - it uses .show class to display */
+#users-modal {
+    display: none;
+}
+
+#users-modal.show {
+    display: flex;
 }
 
 .modal-content {
