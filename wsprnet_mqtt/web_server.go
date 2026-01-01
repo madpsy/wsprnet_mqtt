@@ -59,6 +59,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/api/spots/raw", ws.handleRawSpots)
 	http.HandleFunc("/api/spots/deduped", ws.handleDedupedSpots)
 	http.HandleFunc("/api/spots/instances", ws.handleSpotInstances)
+	http.HandleFunc("/api/spots/gaps", ws.handleSpotGaps)
 
 	// Admin endpoints
 	http.HandleFunc("/admin/login", ws.adminHandler.HandleAdminLogin)
@@ -774,6 +775,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         <div class="tab" onclick="switchTab('snr')">📈 SNR</div>
         <div class="tab" onclick="switchTab('countries')">🌍 Countries</div>
         <div class="tab" onclick="switchTab('spots')">📍 Spots</div>
+        <div class="tab" onclick="switchTab('gaps')">🔍 Gaps</div>
     </div>
 
     <!-- Overview Tab -->
@@ -1043,6 +1045,43 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
     </div>
     </div>
     <!-- End Spots Tab -->
+
+    <!-- Gaps Tab -->
+    <div id="gaps" class="tab-content">
+    <div class="chart-container">
+        <div class="chart-title">🔍 WSPR Cycle Gap Analysis</div>
+        
+        <div style="background: rgba(59, 130, 246, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(59, 130, 246, 0.3); margin-bottom: 20px;">
+            <p style="color: #cbd5e1; margin-bottom: 10px;">
+                WSPR transmissions occur every 2 minutes at even minutes (00, 02, 04, etc.). This analysis identifies missing cycles where no spots were received.
+            </p>
+            <p style="color: #cbd5e1; font-size: 0.9em;">
+                <strong>Coverage Rate</strong> = (Cycles with spots / Total expected cycles) × 100%
+            </p>
+        </div>
+
+        <!-- Time Range Filter -->
+        <div class="filter-container">
+            <div class="filter-title">Time Range</div>
+            <div style="display: flex; gap: 15px; align-items: center;">
+                <select id="gapsTimeFilter" style="padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                    <option value="1">Last 1 Hour</option>
+                    <option value="6">Last 6 Hours</option>
+                    <option value="12">Last 12 Hours</option>
+                    <option value="24" selected>Last 24 Hours</option>
+                </select>
+                <button class="control-btn" onclick="loadGaps()">🔄 Refresh</button>
+            </div>
+        </div>
+
+        <!-- Gap Summary -->
+        <div id="gapsSummary" style="margin-bottom: 20px;"></div>
+
+        <!-- Gap Details by Instance/Band -->
+        <div id="gapsDetails"></div>
+    </div>
+    </div>
+    <!-- End Gaps Tab -->
 
     <div class="last-update">
         Last updated: <span id="lastUpdate">-</span> | Auto-refresh every 120 seconds | <a href="/admin" style="color: #60a5fa; text-decoration: none;">⚙️ Admin</a>
@@ -3689,10 +3728,165 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             loadSpots();
         }
 
+        // Gaps tab functions
+        async function loadGaps() {
+            const timeFilter = parseInt(document.getElementById('gapsTimeFilter').value);
+            
+            try {
+                const response = await fetch(` + "`" + `/api/spots/gaps?hours=${timeFilter}` + "`" + `);
+                const gaps = await response.json();
+                
+                displayGaps(gaps, timeFilter);
+            } catch (error) {
+                console.error('Error loading gaps:', error);
+                document.getElementById('gapsDetails').innerHTML =
+                    '<p style="color: #ef4444; text-align: center; padding: 40px;">Error loading gap analysis</p>';
+            }
+        }
+
+        function displayGaps(gaps, hoursBack) {
+            const summaryContainer = document.getElementById('gapsSummary');
+            const detailsContainer = document.getElementById('gapsDetails');
+            
+            if (!gaps || Object.keys(gaps).length === 0) {
+                summaryContainer.innerHTML = '';
+                detailsContainer.innerHTML = '<p style="color: #10b981; text-align: center; padding: 40px; font-size: 1.2em;">✓ No gaps found! All WSPR cycles have spots.</p>';
+                return;
+            }
+
+            // Calculate summary statistics
+            let totalGaps = 0;
+            let instancesWithGaps = 0;
+            let worstCoverage = 100;
+            let worstInstance = '';
+            let worstBand = '';
+
+            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+                if (bandGaps.length > 0) {
+                    instancesWithGaps++;
+                    bandGaps.forEach(gap => {
+                        totalGaps += gap.gap_count;
+                        if (gap.coverage_rate < worstCoverage) {
+                            worstCoverage = gap.coverage_rate;
+                            worstInstance = instance;
+                            worstBand = gap.band;
+                        }
+                    });
+                }
+            });
+
+            // Display summary
+            summaryContainer.innerHTML = ` + "`" + `
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px;">
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                        <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Instances with Gaps</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #f59e0b;">${instancesWithGaps}</div>
+                    </div>
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                        <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Total Missing Cycles</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #ef4444;">${totalGaps}</div>
+                    </div>
+                    <div style="background: #1e293b; padding: 15px; border-radius: 8px; border: 1px solid #334155;">
+                        <div style="color: #94a3b8; font-size: 0.85em; margin-bottom: 5px;">Worst Coverage</div>
+                        <div style="font-size: 1.5em; font-weight: bold; color: #ef4444;">${worstCoverage.toFixed(1)}%</div>
+                        <div style="color: #64748b; font-size: 0.85em; margin-top: 5px;">${worstInstance} on ${worstBand}</div>
+                    </div>
+                </div>
+            ` + "`" + `;
+
+            // Display details per instance
+            let html = '';
+            const sortedInstances = Object.keys(gaps).sort();
+
+            sortedInstances.forEach(instance => {
+                const bandGaps = gaps[instance];
+                if (bandGaps.length === 0) return;
+
+                // Sort by coverage rate (worst first)
+                bandGaps.sort((a, b) => a.coverage_rate - b.coverage_rate);
+
+                const displayName = instance === 'deduped' ? '📤 Deduped (Sent to WSPRNet)' : ` + "`" + `🖥️ Instance: ${instance}` + "`" + `;
+
+                html += ` + "`" + `
+                    <div style="margin-bottom: 30px; border: 2px solid #334155; border-radius: 12px; overflow: hidden;">
+                        <div style="background: #334155; padding: 15px;">
+                            <h3 style="color: #60a5fa; margin: 0;">${displayName}</h3>
+                        </div>
+                        <div style="padding: 20px;">
+                ` + "`" + `;
+
+                bandGaps.forEach(gap => {
+                    const coverageColor = gap.coverage_rate >= 90 ? '#10b981' : gap.coverage_rate >= 75 ? '#f59e0b' : '#ef4444';
+                    const maxDisplay = 20; // Show first 20 missing cycles
+                    const displayCycles = gap.missing_cycles.slice(0, maxDisplay);
+                    const remaining = gap.missing_cycles.length - maxDisplay;
+
+                    html += ` + "`" + `
+                        <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                                <div>
+                                    <span class="badge badge-warning" style="font-size: 1.1em; padding: 6px 14px;">${gap.band}</span>
+                                </div>
+                                <div style="text-align: right;">
+                                    <div style="font-size: 1.5em; font-weight: bold; color: ${coverageColor};">
+                                        ${gap.coverage_rate.toFixed(1)}%
+                                    </div>
+                                    <div style="color: #94a3b8; font-size: 0.85em;">Coverage Rate</div>
+                                </div>
+                            </div>
+                            
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+                                <div>
+                                    <div style="color: #94a3b8; font-size: 0.85em;">Missing Cycles</div>
+                                    <div style="font-size: 1.3em; font-weight: bold; color: #ef4444;">${gap.gap_count}</div>
+                                </div>
+                                <div>
+                                    <div style="color: #94a3b8; font-size: 0.85em;">Total Expected</div>
+                                    <div style="font-size: 1.3em; font-weight: bold; color: #60a5fa;">${gap.total_cycles}</div>
+                                </div>
+                            </div>
+
+                            <div style="background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
+                                <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Missing Cycle Times (UTC):</div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                    ${displayCycles.map(cycle => ` + "`" + `
+                                        <span style="background: #ef4444; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">
+                                            ${cycle}
+                                        </span>
+                                    ` + "`" + `).join('')}
+                                    ${remaining > 0 ? ` + "`" + `
+                                        <span style="background: #475569; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.85em;">
+                                            +${remaining} more
+                                        </span>
+                                    ` + "`" + ` : ''}
+                                </div>
+                            </div>
+                        </div>
+                    ` + "`" + `;
+                });
+
+                html += ` + "`" + `
+                        </div>
+                    </div>
+                ` + "`" + `;
+            });
+
+            detailsContainer.innerHTML = html;
+        }
+
+        function initGapsTab() {
+            // Add event listener for time filter
+            document.getElementById('gapsTimeFilter').addEventListener('change', loadGaps);
+            
+            // Initial load
+            loadGaps();
+        }
+
         // Initialize map and filters on load
         initMap();
         initBandFilters();
         initSpotsTab();
+        initGapsTab();
 
         // Initial load
         fetchData();
@@ -3705,6 +3899,14 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             const spotsTab = document.getElementById('spots');
             if (spotsTab && spotsTab.classList.contains('active')) {
                 loadSpots();
+            }
+        }, 120000);
+
+        // Auto-refresh gaps tab every 120 seconds if active
+        setInterval(() => {
+            const gapsTab = document.getElementById('gaps');
+            if (gapsTab && gapsTab.classList.contains('active')) {
+                loadGaps();
             }
         }, 120000);
     </script>
@@ -3804,4 +4006,31 @@ func (ws *WebServer) handleSpotInstances(w http.ResponseWriter, r *http.Request)
 
 	instances := ws.spotWriter.GetInstanceNames()
 	_ = json.NewEncoder(w).Encode(instances)
+}
+
+// handleSpotGaps returns gap analysis showing missing WSPR cycles
+func (ws *WebServer) handleSpotGaps(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	if ws.spotWriter == nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"error": "Spot writer not initialized",
+			"gaps":  map[string]interface{}{},
+		})
+		return
+	}
+
+	// Parse query parameters
+	query := r.URL.Query()
+	hoursBackStr := query.Get("hours")
+	hoursBack := 24 // default to 24 hours
+	if hoursBackStr != "" {
+		if h, err := time.ParseDuration(hoursBackStr + "h"); err == nil {
+			hoursBack = int(h.Hours())
+		}
+	}
+
+	gaps := ws.spotWriter.AnalyzeGaps(hoursBack)
+	_ = json.NewEncoder(w).Encode(gaps)
 }

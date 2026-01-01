@@ -450,6 +450,125 @@ func (sw *SpotWriter) GetInstanceNames() []string {
 	return names
 }
 
+// GapInfo represents information about missing WSPR cycles
+type GapInfo struct {
+	Instance      string   `json:"instance"`
+	Band          string   `json:"band"`
+	MissingCycles []string `json:"missing_cycles"` // e.g., ["18:20", "18:22"]
+	GapCount      int      `json:"gap_count"`
+	TotalCycles   int      `json:"total_cycles"`
+	CoverageRate  float64  `json:"coverage_rate"` // percentage
+}
+
+// AnalyzeGaps analyzes spots to find missing WSPR cycles
+// WSPR cycles occur every 2 minutes at even minutes (00, 02, 04, etc.)
+func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
+	sw.cacheMu.RLock()
+	defer sw.cacheMu.RUnlock()
+
+	result := make(map[string][]GapInfo)
+
+	// Calculate time range
+	endTime := time.Now()
+	startTime := endTime.Add(-time.Duration(hoursBack) * time.Hour)
+
+	// Round start time to nearest 2-minute boundary
+	startTime = time.Unix((startTime.Unix()/120)*120, 0)
+
+	// Generate all expected WSPR cycles in the time range
+	expectedCycles := make(map[int64]bool)
+	for t := startTime.Unix(); t <= endTime.Unix(); t += 120 {
+		expectedCycles[t] = true
+	}
+	totalExpectedCycles := len(expectedCycles)
+
+	// Analyze raw spots per instance per band
+	for instance, spots := range sw.rawSpots {
+		// Group spots by band
+		bandSpots := make(map[string][]StoredSpot)
+		for _, spot := range spots {
+			if spot.Timestamp.After(startTime) && spot.Timestamp.Before(endTime) {
+				bandSpots[spot.Band] = append(bandSpots[spot.Band], spot)
+			}
+		}
+
+		// Analyze each band
+		for band, spots := range bandSpots {
+			// Find which cycles have spots
+			cyclesWithSpots := make(map[int64]bool)
+			for _, spot := range spots {
+				cycleTime := (spot.Timestamp.Unix() / 120) * 120
+				cyclesWithSpots[cycleTime] = true
+			}
+
+			// Find missing cycles
+			var missingCycles []string
+			for cycle := range expectedCycles {
+				if !cyclesWithSpots[cycle] {
+					t := time.Unix(cycle, 0).UTC()
+					missingCycles = append(missingCycles, t.Format("15:04"))
+				}
+			}
+
+			// Only include if there are gaps
+			if len(missingCycles) > 0 {
+				coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
+
+				result[instance] = append(result[instance], GapInfo{
+					Instance:      instance,
+					Band:          band,
+					MissingCycles: missingCycles,
+					GapCount:      len(missingCycles),
+					TotalCycles:   totalExpectedCycles,
+					CoverageRate:  coverageRate,
+				})
+			}
+		}
+	}
+
+	// Analyze deduped spots
+	bandSpots := make(map[string][]StoredSpot)
+	for _, spot := range sw.dedupedSpots {
+		if spot.Timestamp.After(startTime) && spot.Timestamp.Before(endTime) {
+			bandSpots[spot.Band] = append(bandSpots[spot.Band], spot)
+		}
+	}
+
+	for band, spots := range bandSpots {
+		// Find which cycles have spots
+		cyclesWithSpots := make(map[int64]bool)
+		for _, spot := range spots {
+			cycleTime := (spot.Timestamp.Unix() / 120) * 120
+			cyclesWithSpots[cycleTime] = true
+		}
+
+		// Find missing cycles
+		var missingCycles []string
+		for cycle := range expectedCycles {
+			if !cyclesWithSpots[cycle] {
+				t := time.Unix(cycle, 0).UTC()
+				missingCycles = append(missingCycles, t.Format("15:04"))
+			}
+		}
+
+		// Only include if there are gaps
+		if len(missingCycles) > 0 {
+			coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
+
+			result["deduped"] = append(result["deduped"], GapInfo{
+				Instance:      "deduped",
+				Band:          band,
+				MissingCycles: missingCycles,
+				GapCount:      len(missingCycles),
+				TotalCycles:   totalExpectedCycles,
+				CoverageRate:  coverageRate,
+			})
+		}
+	}
+
+	return result
+}
+
 // Stop stops the spot writer and closes all files
 func (sw *SpotWriter) Stop() {
 	close(sw.stopChan)
