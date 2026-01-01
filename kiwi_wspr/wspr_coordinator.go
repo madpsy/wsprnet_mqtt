@@ -125,6 +125,28 @@ func (wc *WSPRCoordinator) Start() error {
 	log.Printf("WSPR Coordinator: Work directory: %s", wc.workDir)
 	log.Printf("WSPR Coordinator: wsprd path: %s", wc.wsprdPath)
 
+	// Create persistent client connection
+	client, err := NewKiwiClient(wc.config)
+	if err != nil {
+		return fmt.Errorf("failed to create client: %w", err)
+	}
+	wc.client = client
+
+	// Start client in background - it will maintain connection
+	go func() {
+		if err := client.Run(); err != nil {
+			log.Printf("WSPR Coordinator: Client error: %v", err)
+			// Mark as failed if client dies
+			wc.mu.Lock()
+			wc.recordingState = RecordingStateFailed
+			wc.lastError = fmt.Sprintf("Client connection error: %v", err)
+			wc.mu.Unlock()
+		}
+	}()
+
+	// Wait a moment for connection to establish
+	time.Sleep(2 * time.Second)
+
 	// Start the recording/decoding loop immediately
 	// It will sync to WSPR cycle boundaries internally
 	go wc.recordingLoop()
@@ -316,7 +338,7 @@ func (wc *WSPRCoordinator) recordingLoop() {
 	}
 }
 
-// recordCycle records one WSPR cycle - creates new client each time for new file
+// recordCycle records one WSPR cycle - uses persistent connection, just manages WAV files
 func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Duration) (string, error) {
 	// Generate filename based on cycle start time
 	// Frequency is already in kHz, use it directly for filename
@@ -326,33 +348,20 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 
 	fullPath := filepath.Join(wc.workDir, baseFilename)
 
-	// Close previous client if exists to start fresh recording
-	if wc.client != nil {
-		wc.client.Close()
-		wc.client = nil
+	wc.mu.Lock()
+	client := wc.client
+	wc.mu.Unlock()
+
+	if client == nil {
+		return "", fmt.Errorf("client not initialized")
 	}
 
 	log.Printf("WSPR Coordinator: Starting recording to %s for %.0f seconds", baseFilename, duration.Seconds())
 
-	// Create config for this recording cycle
-	recordConfig := *wc.config
-	recordConfig.Duration = duration
-	recordConfig.Filename = baseFilename
-	recordConfig.OutputDir = wc.workDir
-
-	client, err := NewKiwiClient(&recordConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed to create client: %w", err)
+	// Start new WAV file on existing connection
+	if err := client.StartNewWAVFile(baseFilename); err != nil {
+		return "", fmt.Errorf("failed to start new WAV file: %w", err)
 	}
-
-	wc.client = client
-
-	// Start client in background
-	go func() {
-		if err := client.Run(); err != nil {
-			log.Printf("WSPR Coordinator: Client error: %v", err)
-		}
-	}()
 
 	// Monitor recording and reconnect if not receiving data
 	endTime := time.Now().Add(duration)
@@ -364,19 +373,27 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 		select {
 		case <-ticker.C:
 			// Check if we're receiving data
-			if !wc.IsReceivingData() && time.Since(lastReconnectAttempt) >= 1*time.Second {
+			if !wc.IsReceivingData() && time.Since(lastReconnectAttempt) >= 5*time.Second {
 				log.Printf("WSPR Coordinator: Not receiving data, attempting reconnect...")
 				lastReconnectAttempt = time.Now()
 
-				// Close current client
+				// Close current client connection
 				if wc.client != nil {
 					wc.client.Close()
 				}
 
-				// Create new client
+				// Create new client with same config
+				recordConfig := *wc.config
+				recordConfig.Filename = baseFilename
+				recordConfig.OutputDir = wc.workDir
+
 				newClient, err := NewKiwiClient(&recordConfig)
 				if err != nil {
 					log.Printf("WSPR Coordinator: Reconnect failed: %v", err)
+					wc.mu.Lock()
+					wc.recordingState = RecordingStateFailed
+					wc.lastError = fmt.Sprintf("Reconnect failed: %v", err)
+					wc.mu.Unlock()
 					continue
 				}
 
@@ -390,26 +407,28 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 						log.Printf("WSPR Coordinator: Client error after reconnect: %v", err)
 					}
 				}()
+
+				// Wait for connection to establish
+				time.Sleep(2 * time.Second)
 			}
 		case <-wc.stopChan:
-			// Stop signal received
+			// Stop signal received - close WAV file but keep connection
 			if wc.client != nil {
-				wc.client.Close()
-				wc.client = nil
+				wc.client.CloseWAVFile()
 			}
 			return "", fmt.Errorf("recording stopped")
 		}
 	}
 
-	// Cache active users before closing the client
+	// Cache active users from the connection
 	if wc.client != nil {
 		users := wc.client.GetActiveUsers()
 		wc.mu.Lock()
 		wc.cachedUsers = users
 		wc.mu.Unlock()
 
-		wc.client.Close()
-		wc.client = nil
+		// Close WAV file but keep connection alive
+		wc.client.CloseWAVFile()
 	}
 
 	// Give a moment for file to be fully written

@@ -400,7 +400,7 @@ func (c *KiwiClient) GetLastSNDTime() time.Time {
 	return c.lastSNDTime
 }
 
-// IsReceivingData returns true if SND data was received in the last 5 seconds
+// IsReceivingData returns true if SND data was received in the last 1 second
 func (c *KiwiClient) IsReceivingData() bool {
 	c.lastSNDTimeMu.RLock()
 	lastTime := c.lastSNDTime
@@ -410,7 +410,7 @@ func (c *KiwiClient) IsReceivingData() bool {
 		return false
 	}
 
-	return time.Since(lastTime) < 5*time.Second
+	return time.Since(lastTime) < 1*time.Second
 }
 
 // splitKeyValue splits a string of key=value pairs
@@ -572,6 +572,51 @@ func (c *KiwiClient) getOutputFilename() string {
 		c.config.Modulation)
 
 	return fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
+}
+
+// CloseWAVFile closes the current WAV file without disconnecting
+func (c *KiwiClient) CloseWAVFile() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Close WAV file
+	if c.wavWriter != nil {
+		c.wavWriter.Close()
+		c.wavWriter = nil
+	}
+
+	if c.outputFile != nil {
+		c.outputFile.Close()
+		c.outputFile = nil
+	}
+
+	log.Println("WAV file closed")
+}
+
+// StartNewWAVFile starts recording to a new WAV file
+func (c *KiwiClient) StartNewWAVFile(filename string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	// Close any existing WAV file first
+	if c.wavWriter != nil {
+		c.wavWriter.Close()
+		c.wavWriter = nil
+	}
+
+	if c.outputFile != nil {
+		c.outputFile.Close()
+		c.outputFile = nil
+	}
+
+	// Update config with new filename
+	c.config.Filename = filename
+
+	// Reset start time for new recording
+	c.startTime = time.Now()
+
+	log.Printf("Ready to start new WAV file: %s", filename)
+	return nil
 }
 
 // Close closes the connection and output file
