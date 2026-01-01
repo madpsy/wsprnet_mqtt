@@ -514,6 +514,7 @@ func (c *KiwiClient) writeSamples(samples []int16) {
 	// Create output file if needed
 	if c.wavWriter == nil {
 		filename := c.getOutputFilename()
+		log.Printf("Creating WAV file in writeSamples: %s (sampleRate=%.0f, channels=%d)", filename, c.sampleRate, c.numChannels)
 		var err error
 		c.outputFile, err = os.Create(filename)
 		if err != nil {
@@ -575,15 +576,19 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
+	log.Printf("StartNewWAVFile called: %s (sampleRate=%.0f, wavWriter=%v)", filename, c.sampleRate, c.wavWriter != nil)
+
 	// Close any existing WAV file first
 	if c.wavWriter != nil {
 		c.wavWriter.Close()
 		c.wavWriter = nil
+		log.Printf("Closed existing WAV writer")
 	}
 
 	if c.outputFile != nil {
 		c.outputFile.Close()
 		c.outputFile = nil
+		log.Printf("Closed existing output file")
 	}
 
 	// Update config with new filename
@@ -592,29 +597,31 @@ func (c *KiwiClient) StartNewWAVFile(filename string) error {
 	// Reset start time for new recording
 	c.startTime = time.Now()
 
-	// If we have a sample rate, create the file immediately
-	// Otherwise, it will be created when first samples arrive
-	if c.sampleRate > 0 {
-		fullPath := fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
-		var err error
-		c.outputFile, err = os.Create(fullPath)
-		if err != nil {
-			return fmt.Errorf("failed to create output file: %w", err)
-		}
-
-		c.wavWriter = NewWAVWriter(c.outputFile, int(c.sampleRate), c.numChannels)
-		if err := c.wavWriter.WriteHeader(); err != nil {
-			c.outputFile.Close()
-			c.outputFile = nil
-			c.wavWriter = nil
-			return fmt.Errorf("failed to write WAV header: %w", err)
-		}
-
-		log.Printf("Started recording to: %s", fullPath)
-	} else {
-		log.Printf("Ready to start new WAV file: %s (waiting for sample rate)", filename)
+	// CRITICAL: In persistent recording mode, we MUST create the file immediately
+	// to avoid race conditions with incoming audio samples
+	// The sample rate should always be known in persistent mode
+	if c.sampleRate == 0 {
+		log.Printf("WARNING: Sample rate is 0, cannot create WAV file yet")
+		return fmt.Errorf("sample rate not yet received from server")
 	}
 
+	fullPath := fmt.Sprintf("%s/%s", c.config.OutputDir, filename)
+	log.Printf("Creating new WAV file immediately: %s", fullPath)
+	var err error
+	c.outputFile, err = os.Create(fullPath)
+	if err != nil {
+		return fmt.Errorf("failed to create output file: %w", err)
+	}
+
+	c.wavWriter = NewWAVWriter(c.outputFile, int(c.sampleRate), c.numChannels)
+	if err := c.wavWriter.WriteHeader(); err != nil {
+		c.outputFile.Close()
+		c.outputFile = nil
+		c.wavWriter = nil
+		return fmt.Errorf("failed to write WAV header: %w", err)
+	}
+
+	log.Printf("Started recording to: %s (header written, ready for samples)", fullPath)
 	return nil
 }
 
