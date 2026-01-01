@@ -3542,10 +3542,17 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             let failedSpots = 0;
             const uniqueCallsigns = new Set();
             const bands = new Set();
+            const bandCallsigns = {}; // Track unique callsigns per band
 
             spots.forEach(spot => {
                 uniqueCallsigns.add(spot.callsign);
                 bands.add(spot.band);
+                
+                if (!bandCallsigns[spot.band]) {
+                    bandCallsigns[spot.band] = new Set();
+                }
+                bandCallsigns[spot.band].add(spot.callsign);
+                
                 if (isDeduped) {
                     if (spot.submitted) successfulSpots++;
                     else failedSpots++;
@@ -3581,6 +3588,29 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             }
 
             container.innerHTML = html;
+
+            // Add band breakdown section below the summary
+            if (Object.keys(bandCallsigns).length > 0) {
+                const sortedBands = sortBands(Object.keys(bandCallsigns));
+                const bandBreakdownHTML = ` + "`" + `
+                    <div style="grid-column: 1 / -1; background: rgba(139, 92, 246, 0.1); padding: 15px; border-radius: 8px; border: 1px solid rgba(139, 92, 246, 0.3); margin-top: 15px;">
+                        <div style="color: #cbd5e1; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Unique Callsigns per Band:</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+                            ${sortedBands.map(band => {
+                                const count = bandCallsigns[band].size;
+                                const bandColor = bandColors[band] || '#8b5cf6';
+                                return ` + "`" + `
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <span class="badge" style="background: ${bandColor}; color: white; font-size: 0.9em;">${band}</span>
+                                        <span style="color: #e2e8f0; font-weight: 600;">${count}</span>
+                                    </div>
+                                ` + "`" + `;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` + "`" + `;
+                container.innerHTML += bandBreakdownHTML;
+            }
         }
 
         // Display spots in table
