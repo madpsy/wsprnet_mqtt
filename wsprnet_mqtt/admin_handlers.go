@@ -298,7 +298,7 @@ func (ah *AdminHandler) HandleSyncKiwis(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Try to load kiwi_wspr config
-	kiwiConfig, err := LoadKiwiWSPRConfig("/app/kiwi_wspr_config/config.yaml")
+	kiwiConfig, err := LoadKiwiWSPRConfig("/app/kiwi_wspr_data/config.yaml")
 	if err != nil {
 		http.Error(w, fmt.Sprintf("Failed to load kiwi_wspr config: %v", err), http.StatusInternalServerError)
 		return

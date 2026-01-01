@@ -33,7 +33,6 @@ services:
       - "8080:8080"  # Web interface
     volumes:
       - kiwi-wspr-data:/app/data
-      - kiwi-wspr-config:/app/config:ro  # Shared config volume (read-only for kiwi-wspr)
     environment:
       - TZ=UTC
     networks:
@@ -60,7 +59,7 @@ services:
       - "9009:9009"  # Web interface
     volumes:
       - wsprnet-mqtt-data:/app/data
-      - kiwi-wspr-config:/app/kiwi_wspr_config:ro  # Access to kiwi_wspr config (read-only)
+      - kiwi-wspr-data:/app/kiwi_wspr_data:ro  # Access to kiwi_wspr data including config (read-only)
     environment:
       - TZ=UTC
       # Uncomment to set custom admin password:
@@ -83,8 +82,6 @@ volumes:
   mosquitto-logs:
     driver: local
   kiwi-wspr-data:
-    driver: local
-  kiwi-wspr-config:
     driver: local
   wsprnet-mqtt-data:
     driver: local

@@ -136,13 +136,6 @@ ensure_static_files() {
 # Initialize configuration file
 initialize_config
 
-# Copy config to shared volume for wsprnet_mqtt to read
-if [ -f "/app/data/config.yaml" ] && [ -d "/app/config" ]; then
-    echo "Copying config to shared volume for wsprnet_mqtt..."
-    cp /app/data/config.yaml /app/config/config.yaml
-    echo "✓ Config copied to /app/config/config.yaml"
-fi
-
 # Ensure CTY database is accessible
 ensure_cty_database
 
