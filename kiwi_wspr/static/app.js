@@ -4,6 +4,7 @@ let kiwiStatusData = {};
 let userToBandMapping = {};
 let usersModalInterval = null;
 let currentModalInstance = null;
+let activeUsersData = {};
 
 async function loadConfig() {
     try {
@@ -33,6 +34,16 @@ async function loadKiwiStatus() {
         updateInstanceHeaders();
     } catch (e) {
         console.error('Failed to load KiwiSDR status:', e);
+    }
+}
+
+async function loadActiveUsers() {
+    try {
+        const response = await fetch('/api/kiwi/users');
+        activeUsersData = await response.json();
+        updateBandConnectionStatus();
+    } catch (e) {
+        console.error('Failed to load active users:', e);
     }
 }
 
@@ -274,6 +285,8 @@ function updateInstancesAndBands() {
                 const bandIdx = config.WSPRBands.indexOf(band);
                 const li = document.createElement('li');
                 li.className = 'item';
+                li.setAttribute('data-band-name', band.Name);
+                li.setAttribute('data-instance-name', inst.Name);
                 
                 // Grey out bands if instance is disabled
                 const isInstanceDisabled = !inst.Enabled;
@@ -286,6 +299,7 @@ function updateInstancesAndBands() {
                         <span class="status ${band.Enabled ? 'status-enabled' : 'status-disabled'}">
                             ${band.Enabled ? 'Enabled' : 'Disabled'}
                         </span>
+                        <span class="band-connection-status" style="margin-left: 10px;"></span>
                         ${isInstanceDisabled ? '<span style="color: #999; font-size: 12px; margin-left: 10px;">(Instance Disabled)</span>' : ''}
                     </div>
                     <div class="item-actions">
@@ -878,15 +892,58 @@ function updateInstanceHeaders() {
     });
 }
 
+// Update band connection status based on active users
+function updateBandConnectionStatus() {
+    if (!userToBandMapping || !activeUsersData) return;
+
+    // Create reverse mapping: band name -> user ID
+    const bandToUserMapping = {};
+    for (const [userId, bandName] of Object.entries(userToBandMapping)) {
+        bandToUserMapping[bandName] = userId;
+    }
+
+    // Update each band's connection status
+    document.querySelectorAll('.item[data-band-name]').forEach(bandEl => {
+        const bandName = bandEl.getAttribute('data-band-name');
+        const instanceName = bandEl.getAttribute('data-instance-name');
+        const statusSpan = bandEl.querySelector('.band-connection-status');
+
+        if (!statusSpan) return;
+
+        // Get the user ID for this band
+        const userId = bandToUserMapping[bandName];
+        if (!userId) {
+            statusSpan.innerHTML = '';
+            return;
+        }
+
+        // Check if this user ID is in the active users for this instance
+        const instanceUsers = activeUsersData[instanceName] || [];
+        const isConnected = instanceUsers.some(user => {
+            const userName = decodeURIComponent(user.n || '');
+            return userName === userId;
+        });
+
+        // Update the badge
+        if (isConnected) {
+            statusSpan.innerHTML = '<span class="status status-enabled" style="font-size: 11px; padding: 2px 6px;">Connected</span>';
+        } else {
+            statusSpan.innerHTML = '<span class="status status-disabled" style="font-size: 11px; padding: 2px 6px;">Disconnected</span>';
+        }
+    });
+}
+
 // Start status polling
 function startStatusPolling() {
     // Load status immediately
     loadStatus();
     loadKiwiStatus();
+    loadActiveUsers();
     
     // Poll every 10 seconds
     setInterval(loadStatus, 10000);
     setInterval(loadKiwiStatus, 10000);
+    setInterval(loadActiveUsers, 10000);
 }
 
 // Update users modal content (internal function)
@@ -1017,6 +1074,10 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Load config and start status polling on page load
-loadConfig();
-loadUserMapping();
-startStatusPolling();
+async function initApp() {
+    await loadConfig();
+    await loadUserMapping();
+    startStatusPolling();
+}
+
+initApp();
