@@ -55,7 +55,7 @@ RUN apt-get update && \
 RUN which wsprd && wsprd --help || echo "wsprd installed"
 
 # Create app directory
-RUN mkdir -p /app/data /app/wspr_data
+RUN mkdir -p /app/data /app/wspr_data /app/config
 
 WORKDIR /app
 
@@ -77,7 +77,7 @@ RUN chmod +x /app/entrypoint.sh
 EXPOSE 8009
 
 # Volume for configuration and data persistence
-VOLUME ["/app/data"]
+VOLUME ["/app/data", "/app/config"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \

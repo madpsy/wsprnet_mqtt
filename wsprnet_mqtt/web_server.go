@@ -61,6 +61,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/admin/api/config/export", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleExportConfig))
 	http.HandleFunc("/admin/api/config/import", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleImportConfig))
 	http.HandleFunc("/admin/api/mqtt/test", ws.adminHandler.AuthMiddleware(ws.handleMQTTTest))
+	http.HandleFunc("/admin/api/kiwi/sync", ws.adminHandler.AuthMiddleware(ws.adminHandler.HandleSyncKiwis))
 	http.HandleFunc("/admin/api/stats/clear", ws.adminHandler.AuthMiddleware(ws.handleClearStats))
 	http.HandleFunc("/admin", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/login", http.StatusSeeOther)

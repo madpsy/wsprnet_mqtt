@@ -281,6 +281,163 @@ func (ah *AdminHandler) HandleImportConfig(w http.ResponseWriter, r *http.Reques
 	}()
 }
 
+// HandleSyncKiwis previews or applies sync of MQTT instances from kiwi_wspr config
+func (ah *AdminHandler) HandleSyncKiwis(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Check if this is a preview or apply request
+	var request struct {
+		Apply bool `json:"apply"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+		// If no body, treat as preview request
+		request.Apply = false
+	}
+
+	// Try to load kiwi_wspr config
+	kiwiConfig, err := LoadKiwiWSPRConfig("/app/kiwi_wspr_config/config.yaml")
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to load kiwi_wspr config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	// Build a map of existing instances by name and topic_prefix for quick lookup
+	existingByName := make(map[string]*InstanceConfig)
+	existingByTopic := make(map[string]*InstanceConfig)
+	for i := range ah.config.MQTT.Instances {
+		inst := &ah.config.MQTT.Instances[i]
+		existingByName[inst.Name] = inst
+		existingByTopic[inst.TopicPrefix] = inst
+	}
+
+	// Track changes
+	type Change struct {
+		Type        string `json:"type"` // "add" or "update"
+		Name        string `json:"name"`
+		TopicPrefix string `json:"topic_prefix"`
+		OldName     string `json:"old_name,omitempty"`
+		OldTopic    string `json:"old_topic,omitempty"`
+	}
+	var changes []Change
+
+	// Process each enabled kiwi instance
+	for _, kiwiInst := range kiwiConfig.KiwiInstances {
+		if !kiwiInst.Enabled {
+			continue
+		}
+
+		// Get the MQTT topic prefix for this instance
+		topicPrefix := kiwiConfig.GetMQTTTopicPrefix(kiwiInst.Name)
+
+		// Check if instance exists by name or topic
+		var existingInst *InstanceConfig
+		if inst, ok := existingByName[kiwiInst.Name]; ok {
+			existingInst = inst
+		} else if inst, ok := existingByTopic[topicPrefix]; ok {
+			existingInst = inst
+		}
+
+		if existingInst != nil {
+			// Check if update is needed
+			if existingInst.Name != kiwiInst.Name || existingInst.TopicPrefix != topicPrefix {
+				changes = append(changes, Change{
+					Type:        "update",
+					Name:        kiwiInst.Name,
+					TopicPrefix: topicPrefix,
+					OldName:     existingInst.Name,
+					OldTopic:    existingInst.TopicPrefix,
+				})
+			}
+		} else {
+			// New instance
+			changes = append(changes, Change{
+				Type:        "add",
+				Name:        kiwiInst.Name,
+				TopicPrefix: topicPrefix,
+			})
+		}
+	}
+
+	// If no changes, return early
+	if len(changes) == 0 {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "success",
+			"message": "No changes needed - all instances are already in sync",
+			"changes": []Change{},
+		})
+		return
+	}
+
+	// If this is just a preview, return the changes
+	if !request.Apply {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"status":  "preview",
+			"message": fmt.Sprintf("Found %d change(s) to apply", len(changes)),
+			"changes": changes,
+		})
+		return
+	}
+
+	// Apply the changes
+	addedCount := 0
+	updatedCount := 0
+
+	for _, change := range changes {
+		if change.Type == "add" {
+			ah.config.MQTT.Instances = append(ah.config.MQTT.Instances, InstanceConfig{
+				Name:        change.Name,
+				TopicPrefix: change.TopicPrefix,
+			})
+			addedCount++
+		} else if change.Type == "update" {
+			// Find and update the instance
+			for i := range ah.config.MQTT.Instances {
+				inst := &ah.config.MQTT.Instances[i]
+				if inst.Name == change.OldName || inst.TopicPrefix == change.OldTopic {
+					inst.Name = change.Name
+					inst.TopicPrefix = change.TopicPrefix
+					updatedCount++
+					break
+				}
+			}
+		}
+	}
+
+	// Save updated config to file
+	data, err := yaml.Marshal(ah.config)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Failed to marshal config: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	if err := os.WriteFile(ah.configFile, data, 0644); err != nil {
+		http.Error(w, fmt.Sprintf("Failed to write config file: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("Synced kiwi instances: %d added, %d updated", addedCount, updatedCount)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status":  "success",
+		"message": fmt.Sprintf("Configuration saved successfully. Application will restart in 2 seconds..."),
+		"added":   addedCount,
+		"updated": updatedCount,
+	})
+
+	// Trigger application exit after a short delay to allow response to be sent
+	go func() {
+		time.Sleep(2 * time.Second)
+		log.Println("Exiting application for restart after kiwi sync")
+		os.Exit(0)
+	}()
+}
+
 // serveLoginPage serves the login HTML page
 func (ah *AdminHandler) serveLoginPage(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "text/html")
@@ -632,6 +789,7 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
         <h2 class="section-title">MQTT Instances</h2>
         <div id="instanceList" class="instance-list"></div>
         <button class="btn" onclick="addInstance()">+ Add Instance</button>
+        <button class="btn btn-secondary" onclick="syncKiwis()">🔄 Sync Kiwis</button>
     </div>
 
     <div class="container">
@@ -1087,6 +1245,136 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
             };
 
             input.click();
+        }
+
+        // Sync kiwi instances from kiwi_wspr config
+        async function syncKiwis() {
+            try {
+                showMessage('🔄 Checking for changes...', 'success');
+
+                // First, get preview of changes
+                const previewResponse = await fetch('/admin/api/kiwi/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apply: false })
+                });
+
+                if (!previewResponse.ok) {
+                    const error = await previewResponse.text();
+                    throw new Error(error);
+                }
+
+                const preview = await previewResponse.json();
+
+                // If no changes, just show message
+                if (preview.changes.length === 0) {
+                    showMessage('✅ ' + preview.message, 'success');
+                    return;
+                }
+
+                // Show modal with changes
+                showSyncModal(preview.changes);
+            } catch (error) {
+                showMessage('❌ Failed to check kiwi instances: ' + error.message, 'error');
+            }
+        }
+
+        // Show modal with sync changes
+        function showSyncModal(changes) {
+            // Create modal overlay
+            const overlay = document.createElement('div');
+            overlay.style.cssText = 'position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0, 0, 0, 0.8); display: flex; align-items: center; justify-content: center; z-index: 9999; animation: fadeIn 0.3s;';
+
+            const modal = document.createElement('div');
+            modal.style.cssText = 'background: #1e293b; padding: 30px; border-radius: 12px; max-width: 600px; width: 90%; max-height: 80vh; overflow-y: auto; border: 2px solid #334155;';
+
+            const title = document.createElement('h2');
+            title.style.cssText = 'color: #60a5fa; margin-bottom: 20px; font-size: 24px;';
+            title.textContent = '🔄 Sync Kiwi Instances';
+
+            const description = document.createElement('p');
+            description.style.cssText = 'color: #94a3b8; margin-bottom: 20px;';
+            description.textContent = 'The following changes will be applied:';
+
+            const changesList = document.createElement('div');
+            changesList.style.cssText = 'margin-bottom: 20px;';
+
+            changes.forEach(change => {
+                const changeItem = document.createElement('div');
+                changeItem.style.cssText = 'background: #0f172a; padding: 15px; border-radius: 8px; margin-bottom: 10px; border-left: 4px solid ' + (change.type === 'add' ? '#10b981' : '#f59e0b');
+
+                if (change.type === 'add') {
+                    changeItem.innerHTML = ` + "`" + `
+                        <div style="color: #10b981; font-weight: 600; margin-bottom: 5px;">➕ Add New Instance</div>
+                        <div style="color: #e2e8f0;">Name: <strong>${change.name}</strong></div>
+                        <div style="color: #94a3b8; font-size: 0.9em;">Topic: ${change.topic_prefix}</div>
+                    ` + "`" + `;
+                } else {
+                    changeItem.innerHTML = ` + "`" + `
+                        <div style="color: #f59e0b; font-weight: 600; margin-bottom: 5px;">🔄 Update Instance</div>
+                        <div style="color: #e2e8f0;">Name: <span style="color: #ef4444; text-decoration: line-through;">${change.old_name}</span> → <strong>${change.name}</strong></div>
+                        <div style="color: #94a3b8; font-size: 0.9em;">Topic: <span style="color: #ef4444; text-decoration: line-through;">${change.old_topic}</span> → ${change.topic_prefix}</div>
+                    ` + "`" + `;
+                }
+
+                changesList.appendChild(changeItem);
+            });
+
+            const warning = document.createElement('div');
+            warning.style.cssText = 'background: rgba(239, 68, 68, 0.1); border: 1px solid #ef4444; padding: 15px; border-radius: 8px; margin-bottom: 20px;';
+            warning.innerHTML = '<div style="color: #ef4444; font-weight: 600; margin-bottom: 5px;">⚠️ Warning</div><div style="color: #fca5a5;">Saving these changes will restart the application.</div>';
+
+            const buttonContainer = document.createElement('div');
+            buttonContainer.style.cssText = 'display: flex; gap: 10px; justify-content: flex-end;';
+
+            const cancelBtn = document.createElement('button');
+            cancelBtn.textContent = 'Cancel';
+            cancelBtn.className = 'btn btn-secondary';
+            cancelBtn.onclick = () => document.body.removeChild(overlay);
+
+            const saveBtn = document.createElement('button');
+            saveBtn.textContent = '💾 Save & Restart';
+            saveBtn.className = 'btn';
+            saveBtn.onclick = async () => {
+                document.body.removeChild(overlay);
+                await applySyncChanges();
+            };
+
+            buttonContainer.appendChild(cancelBtn);
+            buttonContainer.appendChild(saveBtn);
+
+            modal.appendChild(title);
+            modal.appendChild(description);
+            modal.appendChild(changesList);
+            modal.appendChild(warning);
+            modal.appendChild(buttonContainer);
+            overlay.appendChild(modal);
+            document.body.appendChild(overlay);
+        }
+
+        // Apply sync changes
+        async function applySyncChanges() {
+            try {
+                showMessage('🔄 Applying changes...', 'success');
+
+                const response = await fetch('/admin/api/kiwi/sync', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ apply: true })
+                });
+
+                if (!response.ok) {
+                    const error = await response.text();
+                    throw new Error(error);
+                }
+
+                const result = await response.json();
+
+                // Show countdown overlay
+                showRestartCountdown();
+            } catch (error) {
+                showMessage('❌ Failed to apply changes: ' + error.message, 'error');
+            }
         }
 
         // Start status polling on page load
