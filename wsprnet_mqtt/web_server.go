@@ -1004,6 +1004,12 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Search Callsign</label>
                     <input type="text" id="spotCallsignSearch" placeholder="Filter by callsign..." style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
                 </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Country</label>
+                    <select id="spotCountryFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="">All Countries</option>
+                    </select>
+                </div>
             </div>
             <div style="display: flex; gap: 10px; margin-bottom: 15px;">
                 <button class="control-btn" onclick="loadSpots()">🔄 Refresh</button>
@@ -1050,12 +1056,13 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         <th class="sortable" data-column="frequency" data-type="number">Frequency</th>
                         <th class="sortable" data-column="band" data-type="string">Band</th>
                         <th class="sortable" data-column="dbm" data-type="number">Power</th>
+                        <th class="sortable" data-column="country" data-type="string">Country</th>
                         <th class="sortable" data-column="instance" data-type="string">Instance</th>
                         <th class="sortable" data-column="submitted" data-type="boolean">Status</th>
                     </tr>
                 </thead>
                 <tbody id="spotsTableBody">
-                    <tr><td colspan="9" style="text-align: center; padding: 40px; color: #94a3b8;">Loading spots...</td></tr>
+                    <tr><td colspan="10" style="text-align: center; padding: 40px; color: #94a3b8;">Loading spots...</td></tr>
                 </tbody>
             </table>
         </div>
@@ -3704,6 +3711,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         <td>${freqMHz} MHz</td>
                         <td><span class="badge" style="background: ${bandColor}; color: white;">${spot.band}</span></td>
                         <td>${spot.dbm} dBm</td>
+                        <td>${spot.country || '-'}</td>
                         <td>${spot.instance || '-'}</td>
                         <td>${statusHtml}</td>
                     </tr>
@@ -3870,6 +3878,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
         function filterAndDisplaySpots(isDeduped) {
             const callsignSearch = document.getElementById('spotCallsignSearch').value.toUpperCase();
+            const countryFilter = document.getElementById('spotCountryFilter').value;
             
             let filtered = allLoadedSpots;
             
@@ -3881,9 +3890,38 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 filtered = filtered.filter(spot => spot.callsign.toUpperCase().includes(callsignSearch));
             }
             
+            if (countryFilter) {
+                filtered = filtered.filter(spot => spot.country === countryFilter);
+            }
+            
             currentSpots = filtered;
             updateSpotsSummary(currentSpots, isDeduped);
             displaySpots(currentSpots, isDeduped);
+            
+            // Update country dropdown with available countries from loaded spots
+            updateCountryDropdown(allLoadedSpots);
+        }
+        
+        function updateCountryDropdown(spots) {
+            const countrySelect = document.getElementById('spotCountryFilter');
+            const currentValue = countrySelect.value;
+            
+            // Get unique countries
+            const countries = new Set();
+            spots.forEach(spot => {
+                if (spot.country) countries.add(spot.country);
+            });
+            
+            // Rebuild dropdown
+            const sortedCountries = Array.from(countries).sort();
+            countrySelect.innerHTML = '<option value="">All Countries</option>';
+            sortedCountries.forEach(country => {
+                const option = document.createElement('option');
+                option.value = country;
+                option.textContent = country;
+                if (country === currentValue) option.selected = true;
+                countrySelect.appendChild(option);
+            });
         }
 
         function setSpotBandFilter(band) {
@@ -3965,6 +4003,13 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             
             // Real-time callsign search
             document.getElementById('spotCallsignSearch').addEventListener('input', () => {
+                currentPage = 1;
+                const sourceFilter = document.getElementById('spotSourceFilter').value;
+                filterAndDisplaySpots(sourceFilter === 'deduped');
+            });
+            
+            // Country filter
+            document.getElementById('spotCountryFilter').addEventListener('change', () => {
                 currentPage = 1;
                 const sourceFilter = document.getElementById('spotSourceFilter').value;
                 filterAndDisplaySpots(sourceFilter === 'deduped');
