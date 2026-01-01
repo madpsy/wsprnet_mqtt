@@ -1,6 +1,7 @@
 let config = {};
 let statusData = null;
 let kiwiStatusData = {};
+let userToBandMapping = {};
 
 async function loadConfig() {
     try {
@@ -30,6 +31,15 @@ async function loadKiwiStatus() {
         updateInstanceHeaders();
     } catch (e) {
         console.error('Failed to load KiwiSDR status:', e);
+    }
+}
+
+async function loadUserMapping() {
+    try {
+        const response = await fetch('/api/kiwi/user-mapping');
+        userToBandMapping = await response.json();
+    } catch (e) {
+        console.error('Failed to load user mapping:', e);
     }
 }
 
@@ -173,7 +183,7 @@ function updateInstancesAndBands() {
         
         // Get KiwiSDR status for this instance
         const kiwiStatus = kiwiStatusData[inst.Name];
-        let statusLine = `${inst.Host}:${inst.Port} • User: ${inst.User}`;
+        let statusLine = `${inst.Host}:${inst.Port}`;
         
         // Add user count if available (make it clickable)
         if (kiwiStatus && !kiwiStatus.error && kiwiStatus.users && kiwiStatus.users_max) {
@@ -205,14 +215,30 @@ function updateInstancesAndBands() {
                 ${antennaLine}
             </div>
             <div class="item-actions">
-                ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" onclick="showKiwiInfo('${inst.Name}')">Info</button>` : ''}
-                <button class="btn btn-secondary" onclick="toggleInstance(${instIdx})">
+                ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" data-action="info">Info</button>` : ''}
+                <button class="btn btn-secondary" data-action="toggle">
                     ${inst.Enabled ? 'Disable' : 'Enable'}
                 </button>
-                <button class="btn btn-secondary" onclick="editInstance(${instIdx})">Edit</button>
-                <button class="btn btn-danger" onclick="deleteInstance(${instIdx})">Delete</button>
+                <button class="btn btn-secondary" data-action="edit">Edit</button>
+                <button class="btn btn-danger" data-action="delete">Delete</button>
             </div>
         `;
+
+        // Attach event listeners to buttons
+        const actionsDiv = instanceHeader.querySelector('.item-actions');
+        const buttons = actionsDiv.querySelectorAll('button');
+        buttons.forEach(btn => {
+            const action = btn.getAttribute('data-action');
+            if (action === 'info') {
+                btn.addEventListener('click', () => showKiwiInfo(inst.Name));
+            } else if (action === 'toggle') {
+                btn.addEventListener('click', () => toggleInstance(instIdx));
+            } else if (action === 'edit') {
+                btn.addEventListener('click', () => editInstance(instIdx));
+            } else if (action === 'delete') {
+                btn.addEventListener('click', () => deleteInstance(instIdx));
+            }
+        });
         
         instanceCard.appendChild(instanceHeader);
         
@@ -396,7 +422,6 @@ function addInstance() {
         { id: 'name', label: 'Instance Name', placeholder: 'kiwi1' },
         { id: 'host', label: 'Host', placeholder: '44.31.241.9' },
         { id: 'port', label: 'Port', type: 'number', value: '8073' },
-        { id: 'user', label: 'User', value: 'kiwi_wspr' },
         { id: 'password', label: 'Password (optional)', type: 'password' },
         { id: 'mqtt_topic_prefix', label: 'MQTT Topic Prefix (optional - overrides global)', placeholder: 'Leave empty to use global prefix' }
     ], (values) => {
@@ -405,7 +430,6 @@ function addInstance() {
             Name: values.name,
             Host: values.host,
             Port: parseInt(values.port),
-            User: values.user,
             Password: values.password,
             MQTTTopicPrefix: values.mqtt_topic_prefix || '',
             Enabled: true
@@ -421,7 +445,6 @@ function editInstance(idx) {
         { id: 'name', label: 'Instance Name', value: inst.Name },
         { id: 'host', label: 'Host', value: inst.Host },
         { id: 'port', label: 'Port', type: 'number', value: inst.Port },
-        { id: 'user', label: 'User', value: inst.User },
         { id: 'password', label: 'Password (optional)', type: 'password', value: inst.Password },
         { id: 'mqtt_topic_prefix', label: 'MQTT Topic Prefix (optional - overrides global)', value: inst.MQTTTopicPrefix || '', placeholder: 'Leave empty to use global prefix' }
     ], (values) => {
@@ -432,7 +455,6 @@ function editInstance(idx) {
             Name: newName,
             Host: values.host,
             Port: parseInt(values.port),
-            User: values.user,
             Password: values.password,
             MQTTTopicPrefix: values.mqtt_topic_prefix || '',
             Enabled: config.KiwiInstances[idx].Enabled !== undefined ? config.KiwiInstances[idx].Enabled : true
@@ -798,7 +820,7 @@ function updateInstanceHeaders() {
         if (!instanceHeader) return;
         
         // Build status line
-        let statusLine = `${inst.Host}:${inst.Port} • User: ${inst.User}`;
+        let statusLine = `${inst.Host}:${inst.Port}`;
         if (kiwiStatus && !kiwiStatus.error && kiwiStatus.users && kiwiStatus.users_max) {
             statusLine += ` • <span class="users-clickable" onclick="showUsersModal('${inst.Name}')">Users: (${kiwiStatus.users}/${kiwiStatus.users_max})</span>`;
         }
@@ -829,14 +851,30 @@ function updateInstanceHeaders() {
                 ${antennaLine}
             </div>
             <div class="item-actions">
-                ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" onclick="showKiwiInfo('${inst.Name}')">Info</button>` : ''}
-                <button class="btn btn-secondary" onclick="toggleInstance(${instIdx})">
+                ${kiwiStatus && !kiwiStatus.error ? `<button class="btn btn-secondary" data-action="info">Info</button>` : ''}
+                <button class="btn btn-secondary" data-action="toggle">
                     ${inst.Enabled ? 'Disable' : 'Enable'}
                 </button>
-                <button class="btn btn-secondary" onclick="editInstance(${instIdx})">Edit</button>
-                <button class="btn btn-danger" onclick="deleteInstance(${instIdx})">Delete</button>
+                <button class="btn btn-secondary" data-action="edit">Edit</button>
+                <button class="btn btn-danger" data-action="delete">Delete</button>
             </div>
         `;
+
+        // Attach event listeners to buttons
+        const actionsDiv = instanceHeader.querySelector('.item-actions');
+        const buttons = actionsDiv.querySelectorAll('button');
+        buttons.forEach(btn => {
+            const action = btn.getAttribute('data-action');
+            if (action === 'info') {
+                btn.addEventListener('click', () => showKiwiInfo(inst.Name));
+            } else if (action === 'toggle') {
+                btn.addEventListener('click', () => toggleInstance(instIdx));
+            } else if (action === 'edit') {
+                btn.addEventListener('click', () => editInstance(instIdx));
+            } else if (action === 'delete') {
+                btn.addEventListener('click', () => deleteInstance(instIdx));
+            }
+        });
     });
 }
 
@@ -859,13 +897,16 @@ async function showUsersModal(instanceName) {
     // Show modal with loading message
     modalBody.innerHTML = '<p>Loading active users...</p>';
     modal.classList.add('show');
-    
     try {
+        // Load user mapping first
+        await loadUserMapping();
+
         const response = await fetch('/api/kiwi/users');
         const usersData = await response.json();
-        
+
         // Get users for this instance
         const users = usersData[instanceName] || [];
+
         
         if (users.length === 0) {
             modalBody.innerHTML = `
@@ -876,41 +917,48 @@ async function showUsersModal(instanceName) {
             `;
             return;
         }
-        
         // Build users display
         let html = `<div class="user-instance">`;
         html += `<h3>${instanceName} - ${users.length} Active User${users.length !== 1 ? 's' : ''}</h3>`;
-        
+
         users.forEach(user => {
             // URL decode the name and location
-            const name = decodeURIComponent(user.n || '(no identity)');
+            let rawName = decodeURIComponent(user.n || '(no identity)');
+
+            // Check if this is a generated user ID and translate to band name
+            let displayName = rawName;
+            if (userToBandMapping[rawName]) {
+                displayName = `Decoder - ${userToBandMapping[rawName]}`;
+            }
+
+
             const location = decodeURIComponent(user.g || 'Unknown location');
             const freqKHz = (user.f / 1000).toFixed(1);
             const mode = user.m || 'N/A';
             const time = user.t || 'N/A';
-            
+            const ackTime = user.rs || 'N/A';
+
             html += `
                 <div class="user-card">
                     <div class="user-card-header">
                         <div>
-                            <div class="user-name">${name}</div>
+                            <div class="user-name">${displayName}</div>
                             <div class="user-location">📍 ${location}</div>
                         </div>
-                        ${user.rt === 1 ? '<span class="recording-badge">🔴 Recording</span>' : ''}
                     </div>
                     <div class="user-details">
                         <div class="user-detail"><strong>Frequency:</strong> ${freqKHz} kHz</div>
                         <div class="user-detail"><strong>Mode:</strong> ${mode.toUpperCase()}</div>
                         <div class="user-detail"><strong>Connected:</strong> ${time}</div>
-                        ${user.rt === 1 ? `<div class="user-detail"><strong>Recording:</strong> ${user.rs || 'N/A'}</div>` : ''}
+                        <div class="user-detail"><strong>Ack:</strong> ${ackTime}</div>
                     </div>
                 </div>
             `;
         });
-        
+
         html += `</div>`;
         modalBody.innerHTML = html;
-        
+
     } catch (error) {
         console.error('Error loading users:', error);
         modalBody.innerHTML = `
@@ -942,4 +990,5 @@ document.addEventListener('DOMContentLoaded', () => {
 
 // Load config and start status polling on page load
 loadConfig();
+loadUserMapping();
 startStatusPolling();

@@ -15,25 +15,25 @@ import (
 
 // KiwiUser represents a user connected to the KiwiSDR
 type KiwiUser struct {
-	Index         int     `json:"i"`
-	Name          string  `json:"n"`
-	Location      string  `json:"g"`
-	Frequency     int     `json:"f"`
-	Mode          string  `json:"m"`
-	Zoom          int     `json:"z"`
-	Waterfall     int     `json:"wf"`
-	FreqChange    int     `json:"fc"`
-	Time          string  `json:"t"`
-	Recording     int     `json:"rt"`
-	RecordNum     int     `json:"rn"`
-	RecordTime    string  `json:"rs"`
-	Extension     string  `json:"e"`
-	Antenna       string  `json:"a"`
-	Compression   float64 `json:"c"`
-	FreqOffset    float64 `json:"fo"`
-	ColorAnt      int     `json:"ca"`
-	NoiseCancel   int     `json:"nc"`
-	NoiseSubtract int     `json:"ns"`
+	Index           int     `json:"i"`
+	Name            string  `json:"n"`
+	Location        string  `json:"g"`
+	Frequency       int     `json:"f"`
+	Mode            string  `json:"m"`
+	Zoom            int     `json:"z"`
+	Waterfall       int     `json:"wf"`
+	FreqChange      int     `json:"fc"`
+	Time            string  `json:"t"`
+	InactivityTimer int     `json:"rt"` // Inactivity timer (resets on freq change, etc.)
+	RecordNum       int     `json:"rn"`
+	AckTime         string  `json:"rs"` // Acknowledgment time remaining
+	Extension       string  `json:"e"`
+	Antenna         string  `json:"a"`
+	Compression     float64 `json:"c"`
+	FreqOffset      float64 `json:"fo"`
+	ColorAnt        int     `json:"ca"`
+	NoiseCancel     int     `json:"nc"`
+	NoiseSubtract   int     `json:"ns"`
 }
 
 // KiwiClient represents a connection to a KiwiSDR server

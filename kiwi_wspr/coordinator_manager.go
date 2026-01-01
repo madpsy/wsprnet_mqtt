@@ -117,14 +117,20 @@ func (cm *CoordinatorManager) startCoordinator(band WSPRBand) error {
 		return fmt.Errorf("instance %s is disabled", band.Instance)
 	}
 
-	// Create config for this band
-	// Frequency is in kHz as expected by KiwiSDR
-	bandConfig := &Config{
+	// Create coordinator first to get the generated user ID
+	// Format: instance_frequency (e.g., kiwi1_14097)
+	uniqueID := fmt.Sprintf("%s_%d", band.Instance, int(band.Frequency))
+
+	// Get instance-specific MQTT topic prefix if configured
+	mqttTopicPrefix := instance.MQTTTopicPrefix
+
+	// Create a temporary config to pass to coordinator constructor
+	tempConfig := &Config{
 		ServerHost:  instance.Host,
 		ServerPort:  instance.Port,
 		Frequency:   band.Frequency,
 		Modulation:  "usb",
-		User:        instance.User,
+		User:        "", // Will be set to generated user
 		Password:    instance.Password,
 		Duration:    120 * time.Second,
 		OutputDir:   cm.appConfig.Decoder.WorkDir,
@@ -135,15 +141,8 @@ func (cm *CoordinatorManager) startCoordinator(band WSPRBand) error {
 		Quiet:       cm.appConfig.Logging.Quiet,
 	}
 
-	// Create coordinator with instance name and frequency for unique directory
-	// Format: instance_frequency (e.g., kiwi1_14097)
-	uniqueID := fmt.Sprintf("%s_%d", band.Instance, int(band.Frequency))
-
-	// Get instance-specific MQTT topic prefix if configured
-	mqttTopicPrefix := instance.MQTTTopicPrefix
-
 	coordinator := NewWSPRCoordinator(
-		bandConfig,
+		tempConfig,
 		cm.appConfig.Decoder.WSPRDPath,
 		"", // receiverLocator - not used
 		"", // receiverCall - not used
@@ -155,6 +154,9 @@ func (cm *CoordinatorManager) startCoordinator(band WSPRBand) error {
 		cm.oneShot,
 		cm,
 	)
+
+	// Set the generated user ID in the config
+	tempConfig.User = coordinator.GetGeneratedUser()
 
 	if err := coordinator.Start(); err != nil {
 		return fmt.Errorf("failed to start coordinator: %w", err)
@@ -395,7 +397,7 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 		// Get the band config to find the instance name
 		var instanceName string
 		for _, band := range cm.appConfig.WSPRBands {
-			if coord.displayName == band.Name {
+			if coord.GetDisplayName() == band.Name {
 				instanceName = band.Instance
 				break
 			}
@@ -419,4 +421,16 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 	}
 
 	return usersByInstance
+}
+
+// GetUserToBandMapping returns a mapping of generated user IDs to band names
+func (cm *CoordinatorManager) GetUserToBandMapping() map[string]string {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	mapping := make(map[string]string)
+	for _, coord := range cm.coordinators {
+		mapping[coord.GetGeneratedUser()] = coord.GetDisplayName()
+	}
+	return mapping
 }

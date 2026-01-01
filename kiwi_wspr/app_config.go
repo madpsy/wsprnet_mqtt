@@ -35,7 +35,6 @@ type KiwiInstance struct {
 	Host            string `yaml:"host"`
 	Port            int    `yaml:"port"`
 	Password        string `yaml:"password"`
-	User            string `yaml:"user"`
 	Enabled         bool   `yaml:"enabled"`
 	MQTTTopicPrefix string `yaml:"mqtt_topic_prefix"` // Optional: Override global MQTT topic prefix for this instance
 }

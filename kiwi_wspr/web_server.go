@@ -71,6 +71,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/api/status", ws.handleStatus)
 	http.HandleFunc("/api/kiwi/status", ws.handleKiwiStatus)
 	http.HandleFunc("/api/kiwi/users", ws.handleKiwiUsers)
+	http.HandleFunc("/api/kiwi/user-mapping", ws.handleUserMapping)
 	http.HandleFunc("/api/mqtt/test", ws.handleMQTTTest)
 
 	addr := fmt.Sprintf(":%d", ws.port)
@@ -370,4 +371,18 @@ func (ws *WebServer) handleKiwiUsers(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(usersByInstance)
+}
+
+// handleUserMapping returns the mapping of generated user IDs to band names
+func (ws *WebServer) handleUserMapping(w http.ResponseWriter, r *http.Request) {
+	var mapping map[string]string
+
+	if ws.coordinatorManager != nil {
+		mapping = ws.coordinatorManager.GetUserToBandMapping()
+	} else {
+		mapping = make(map[string]string)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(mapping)
 }

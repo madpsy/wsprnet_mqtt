@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"log"
 	"os"
@@ -31,6 +33,7 @@ type WSPRCoordinator struct {
 	workDir         string
 	displayName     string // User-friendly name for GUI display
 	uniqueID        string // Unique identifier for this coordinator (instance_frequency)
+	generatedUser   string // Auto-generated 6-character user ID for this band
 	mqttPublisher   *MQTTPublisher
 	mqttTopicPrefix string // Optional MQTT topic prefix override for this instance
 	oneShot         bool
@@ -61,6 +64,16 @@ type WSPRDecode struct {
 // Format: YYMMDD HHMM Seq SNR DT Freq Callsign Locator Power [extra columns]
 var wsprPattern = regexp.MustCompile(`^(\d{6})\s+(\d{4})\s+\d+\s+(-?\d+)\s+([-\d.]+)\s+([\d.]+)\s+(\S+)\s+(.+)$`)
 
+// generateRandomUser generates a random 6-character user ID
+func generateRandomUser() string {
+	bytes := make([]byte, 3) // 3 bytes = 6 hex characters
+	if _, err := rand.Read(bytes); err != nil {
+		// Fallback to timestamp-based if random fails
+		return fmt.Sprintf("%06x", time.Now().UnixNano()%0xFFFFFF)
+	}
+	return hex.EncodeToString(bytes)
+}
+
 // NewWSPRCoordinator creates a new WSPR coordinator
 // displayName is the user-friendly name for GUI display (from config)
 // mqttTopicPrefix is an optional MQTT topic prefix override for this instance
@@ -71,12 +84,23 @@ func NewWSPRCoordinator(config *Config, wsprdPath, _, _, workDir, displayName, u
 		workDir:         workDir,
 		displayName:     displayName,
 		uniqueID:        uniqueID,
+		generatedUser:   generateRandomUser(),
 		mqttPublisher:   mqttPublisher,
 		mqttTopicPrefix: mqttTopicPrefix,
 		oneShot:         oneShot,
 		manager:         manager,
 		stopChan:        make(chan struct{}),
 	}
+}
+
+// GetGeneratedUser returns the auto-generated user ID for this coordinator
+func (wc *WSPRCoordinator) GetGeneratedUser() string {
+	return wc.generatedUser
+}
+
+// GetDisplayName returns the display name (band name) for this coordinator
+func (wc *WSPRCoordinator) GetDisplayName() string {
+	return wc.displayName
 }
 
 // Start begins the WSPR recording and decoding cycle
