@@ -1099,14 +1099,26 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
         <!-- Time Range Filter -->
         <div class="filter-container">
-            <div class="filter-title">Time Range</div>
-            <div style="display: flex; gap: 15px; align-items: center;">
-                <select id="gapsTimeFilter" style="padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
-                    <option value="1">Last 1 Hour</option>
-                    <option value="6">Last 6 Hours</option>
-                    <option value="12">Last 12 Hours</option>
-                    <option value="24" selected>Last 24 Hours</option>
-                </select>
+            <div class="filter-title">Filters</div>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; margin-bottom: 15px;">
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Time Range</label>
+                    <select id="gapsTimeFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="1">Last 1 Hour</option>
+                        <option value="6">Last 6 Hours</option>
+                        <option value="12">Last 12 Hours</option>
+                        <option value="24" selected>Last 24 Hours</option>
+                    </select>
+                </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Instance</label>
+                    <select id="gapsInstanceFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="all">All Instances</option>
+                        <option value="deduped">📤 Deduped (Sent to WSPRNet)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display: flex; gap: 10px;">
                 <button class="control-btn" onclick="loadGaps()">🔄 Refresh</button>
             </div>
         </div>
@@ -4049,6 +4061,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         }
 
         // Gaps tab functions
+        let allGapsData = {}; // Store all gaps data for filtering
+
         async function loadGaps() {
             const timeFilter = parseInt(document.getElementById('gapsTimeFilter').value);
             
@@ -4056,6 +4070,13 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 const response = await fetch(` + "`" + `/api/spots/gaps?hours=${timeFilter}` + "`" + `);
                 const gaps = await response.json();
                 
+                // Store all gaps data
+                allGapsData = gaps;
+                
+                // Populate instance dropdown
+                populateGapsInstanceFilter(gaps);
+                
+                // Display with current filter
                 displayGaps(gaps, timeFilter);
             } catch (error) {
                 console.error('Error loading gaps:', error);
@@ -4064,11 +4085,50 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             }
         }
 
+        function populateGapsInstanceFilter(gaps) {
+            const select = document.getElementById('gapsInstanceFilter');
+            const currentValue = select.value;
+            
+            // Get all instance names
+            const instances = Object.keys(gaps).filter(inst => inst !== 'deduped').sort();
+            
+            // Rebuild dropdown
+            let html = '<option value="all">All Instances</option>';
+            html += '<option value="deduped">Deduped (Sent to WSPRNet)</option>';
+            
+            instances.forEach(instance => {
+                html += '<option value="' + instance + '">Instance: ' + instance + '</option>';
+            });
+            
+            select.innerHTML = html;
+            
+            // Restore previous selection if it still exists
+            if (currentValue && (currentValue === 'all' || currentValue === 'deduped' || instances.includes(currentValue))) {
+                select.value = currentValue;
+            }
+        }
+
+        function filterGapsByInstance() {
+            displayGaps(allGapsData, parseInt(document.getElementById('gapsTimeFilter').value));
+        }
+
         function displayGaps(gaps, hoursBack) {
             const summaryContainer = document.getElementById('gapsSummary');
             const detailsContainer = document.getElementById('gapsDetails');
             
-            if (!gaps || Object.keys(gaps).length === 0) {
+            // Apply instance filter
+            const instanceFilter = document.getElementById('gapsInstanceFilter').value;
+            let filteredGaps = gaps;
+            
+            if (instanceFilter !== 'all') {
+                // Filter to show only selected instance
+                filteredGaps = {};
+                if (gaps[instanceFilter]) {
+                    filteredGaps[instanceFilter] = gaps[instanceFilter];
+                }
+            }
+            
+            if (!filteredGaps || Object.keys(filteredGaps).length === 0) {
                 summaryContainer.innerHTML = '';
                 detailsContainer.innerHTML = '<p style="color: #10b981; text-align: center; padding: 40px; font-size: 1.2em;">✓ No gaps found! All WSPR cycles have spots.</p>';
                 document.getElementById('gapsBandNav').innerHTML = '';
@@ -4077,7 +4137,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
             // Collect all bands with gaps for navigation
             const bandsWithGaps = new Set();
-            Object.values(gaps).forEach(bandGaps => {
+            Object.values(filteredGaps).forEach(bandGaps => {
                 bandGaps.forEach(gap => bandsWithGaps.add(gap.band));
             });
             const sortedBandsWithGaps = sortBands(Array.from(bandsWithGaps));
@@ -4092,7 +4152,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             let worstInstance = '';
             let worstBand = '';
 
-            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+            Object.entries(filteredGaps).forEach(([instance, bandGaps]) => {
                 if (bandGaps.length > 0) {
                     instancesWithGaps++;
                     bandGaps.forEach(gap => {
@@ -4127,7 +4187,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
 
             // Reorganize data by band first, then instance
             const bandData = {};
-            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+            Object.entries(filteredGaps).forEach(([instance, bandGaps]) => {
                 bandGaps.forEach(gap => {
                     if (!bandData[gap.band]) {
                         bandData[gap.band] = [];
@@ -4226,6 +4286,9 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
         function initGapsTab() {
             // Add event listener for time filter
             document.getElementById('gapsTimeFilter').addEventListener('change', loadGaps);
+            
+            // Add event listener for instance filter
+            document.getElementById('gapsInstanceFilter').addEventListener('change', filterGapsByInstance);
             
             // Initial load
             loadGaps();

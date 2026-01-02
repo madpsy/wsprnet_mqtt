@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 )
@@ -502,13 +503,31 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 				cyclesWithSpots[cycleTime] = true
 			}
 
-			// Find missing cycles
-			var missingCycles []string
+			// Find missing cycles and collect them with timestamps for sorting
+			type missingCycle struct {
+				timestamp int64
+				formatted string
+			}
+			var missing []missingCycle
 			for cycle := range expectedCycles {
 				if !cyclesWithSpots[cycle] {
 					t := time.Unix(cycle, 0).UTC()
-					missingCycles = append(missingCycles, t.Format("15:04"))
+					missing = append(missing, missingCycle{
+						timestamp: cycle,
+						formatted: t.Format("15:04"),
+					})
 				}
+			}
+
+			// Sort by timestamp
+			sort.Slice(missing, func(i, j int) bool {
+				return missing[i].timestamp < missing[j].timestamp
+			})
+
+			// Extract formatted times
+			missingCycles := make([]string, len(missing))
+			for i, m := range missing {
+				missingCycles[i] = m.formatted
 			}
 
 			// Only include if there are gaps
@@ -543,13 +562,31 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 			cyclesWithSpots[cycleTime] = true
 		}
 
-		// Find missing cycles
-		var missingCycles []string
+		// Find missing cycles and collect them with timestamps for sorting
+		type missingCycle struct {
+			timestamp int64
+			formatted string
+		}
+		var missing []missingCycle
 		for cycle := range expectedCycles {
 			if !cyclesWithSpots[cycle] {
 				t := time.Unix(cycle, 0).UTC()
-				missingCycles = append(missingCycles, t.Format("15:04"))
+				missing = append(missing, missingCycle{
+					timestamp: cycle,
+					formatted: t.Format("15:04"),
+				})
 			}
+		}
+
+		// Sort by timestamp
+		sort.Slice(missing, func(i, j int) bool {
+			return missing[i].timestamp < missing[j].timestamp
+		})
+
+		// Extract formatted times
+		missingCycles := make([]string, len(missing))
+		for i, m := range missing {
+			missingCycles[i] = m.formatted
 		}
 
 		// Only include if there are gaps
