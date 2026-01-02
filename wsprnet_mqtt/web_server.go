@@ -4319,20 +4319,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                             </div>
 
                             <div style="background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
-                                <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Missing Cycle Times (UTC):</div>
-                                <div style="display: flex; flex-wrap: wrap; gap: 8px;">
-                                    ${displayCycles.map(cycle => ` + "`" + `
-                                        <span style="background: #ef4444; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.85em; font-weight: 600;">
-                                            ${cycle}
-                                        </span>
-                                    ` + "`" + `).join('')}
-                                    ${remaining > 0 ? ` + "`" + `
-                                        <span style="background: #475569; color: white; padding: 4px 10px; border-radius: 4px; font-size: 0.85em;">
-                                            +${remaining} more
-                                        </span>
-                                    ` + "`" + ` : ''}
-                                </div>
-                            </div>
+                                <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Coverage Timeline:</div>
+                                <div id="timeline_${gap.instance}_${band.replace(/[^a-zA-Z0-9]/g, '_')}" class="gap-timeline" style="min-height: 80px;"></div>
                         </div>
                     ` + "`" + `;
                 });
@@ -4344,6 +4332,88 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             });
 
             detailsContainer.innerHTML = html;
+            
+            // Render timelines after HTML is inserted
+            renderAllGapTimelines(filteredGaps, hoursBack);
+        }
+
+        // Timeline visualization for WSPR cycle gaps
+        function renderGapTimeline(containerId, gapData, hoursBack) {
+            const container = document.getElementById(containerId);
+            if (!container) return;
+
+            const endTime = new Date();
+            const startTime = new Date(endTime.getTime() - (hoursBack * 60 * 60 * 1000));
+            const startMinutes = Math.floor(startTime.getMinutes() / 2) * 2;
+            startTime.setMinutes(startMinutes, 0, 0);
+            
+            const allCycles = [];
+            for (let t = new Date(startTime); t <= endTime; t = new Date(t.getTime() + 120000)) {
+                allCycles.push(new Date(t));
+            }
+            
+            const missingSet = new Set(gapData.missing_cycles);
+            
+            let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
+            html += '<div style="display: flex; align-items: center; margin-bottom: 5px;">';
+            html += '<div style="width: 80px; flex-shrink: 0;"></div>';
+            html += '<div style="flex: 1; position: relative; height: 20px;">';
+            
+            const hourLabels = [];
+            for (let i = 0; i < allCycles.length; i++) {
+                const cycle = allCycles[i];
+                if (cycle.getMinutes() === 0) {
+                    hourLabels.push({
+                        index: i,
+                        label: cycle.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+                    });
+                }
+            }
+            
+            hourLabels.forEach((label) => {
+                const position = (label.index / allCycles.length) * 100;
+                html += '<span style="position: absolute; left: ' + position + '%; transform: translateX(-50%); font-size: 0.75em; color: #64748b;">' + label.label + '</span>';
+            });
+            
+            html += '</div></div>';
+            html += '<div style="display: flex; align-items: center;">';
+            html += '<div style="width: 80px; flex-shrink: 0; font-size: 0.85em; color: #94a3b8; text-align: right; padding-right: 10px;">Coverage:</div>';
+            html += '<div style="flex: 1; display: flex; gap: 1px; height: 40px; background: #0f172a; border-radius: 4px; overflow: hidden; padding: 2px;">';
+            
+            allCycles.forEach(cycle => {
+                const timeStr = cycle.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const isMissing = missingSet.has(timeStr);
+                const color = isMissing ? '#ef4444' : '#10b981';
+                const title = isMissing ? 'Missing: ' + timeStr : 'Coverage: ' + timeStr;
+                html += '<div style="flex: 1; background: ' + color + '; min-width: 2px; border-radius: 2px;" title="' + title + '"></div>';
+            });
+            
+            html += '</div></div>';
+            html += '<div style="display: flex; align-items: center; gap: 20px; margin-top: 8px; font-size: 0.85em;">';
+            html += '<div style="width: 80px; flex-shrink: 0;"></div>';
+            html += '<div style="display: flex; gap: 15px;">';
+            html += '<div style="display: flex; align-items: center; gap: 6px;">';
+            html += '<div style="width: 16px; height: 16px; background: #10b981; border-radius: 3px;"></div>';
+            html += '<span style="color: #94a3b8;">Spots Received</span>';
+            html += '</div>';
+            html += '<div style="display: flex; align-items: center; gap: 6px;">';
+            html += '<div style="width: 16px; height: 16px; background: #ef4444; border-radius: 3px;"></div>';
+            html += '<span style="color: #94a3b8;">Missing Cycles</span>';
+            html += '</div>';
+            html += '</div></div></div>';
+            
+            container.innerHTML = html;
+        }
+
+        function renderAllGapTimelines(gapsData, hoursBack) {
+            setTimeout(() => {
+                Object.entries(gapsData).forEach(([instance, bandGaps]) => {
+                    bandGaps.forEach(gap => {
+                        const timelineId = 'timeline_' + gap.instance + '_' + gap.band.replace(/[^a-zA-Z0-9]/g, '_');
+                        renderGapTimeline(timelineId, gap, hoursBack);
+                    });
+                });
+            }, 100);
         }
 
         function initGapsTab() {
