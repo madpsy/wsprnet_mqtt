@@ -174,6 +174,13 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 
 	// Check if we already have this spot
 	if existing, exists := sa.windows[windowKey][dedupKey]; exists {
+		// Debug for GM4DTH
+		if report.Callsign == "GM4DTH" && band == "630m" {
+			existingWindowTime := time.Unix(windowKey, 0).UTC()
+			log.Printf("DEBUG [GM4DTH/630m]: DUPLICATE DETECTED - existing in window %s, new SNR: %d, existing SNR: %d, existing instance: %s",
+				existingWindowTime.Format("15:04:05"), report.SNR, existing.SNR, existing.InstanceName)
+		}
+
 		// Keep the spot with better SNR
 		if report.SNR > existing.SNR {
 			// New report is better - track the old one as rejected
@@ -188,6 +195,9 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 				log.Printf("Aggregator: Updated spot for %s (better SNR: %d > %d)",
 					report.Callsign, report.SNR, existing.SNR)
 			}
+			if report.Callsign == "GM4DTH" && band == "630m" {
+				log.Printf("DEBUG [GM4DTH/630m]: Replaced existing spot (better SNR)")
+			}
 		} else if report.SNR == existing.SNR {
 			// Tied SNR - track both instances as having tied with each other
 			sa.trackDuplicate(windowKey, report)
@@ -200,6 +210,9 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 				log.Printf("Aggregator: Tied spot for %s (SNR: %d = %d) - [%s] vs [%s]",
 					report.Callsign, report.SNR, existing.SNR, existing.InstanceName, report.InstanceName)
 			}
+			if report.Callsign == "GM4DTH" && band == "630m" {
+				log.Printf("DEBUG [GM4DTH/630m]: REJECTED as tied SNR")
+			}
 		} else {
 			// Existing is better - track the new one as rejected
 			sa.trackDuplicate(windowKey, report)
@@ -210,6 +223,9 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 			if DebugMode {
 				log.Printf("Aggregator: Duplicate spot for %s (keeping existing SNR: %d > %d)",
 					report.Callsign, existing.SNR, report.SNR)
+			}
+			if report.Callsign == "GM4DTH" && band == "630m" {
+				log.Printf("DEBUG [GM4DTH/630m]: REJECTED as worse SNR")
 			}
 		}
 	} else {
