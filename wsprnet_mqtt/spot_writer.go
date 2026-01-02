@@ -471,7 +471,9 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	result := make(map[string][]GapInfo)
 
 	// Calculate time range
-	endTime := time.Now()
+	// Subtract 4 minutes from now to exclude the most recent incomplete WSPR cycles
+	// (spots may not have been received/processed yet for the last 2-4 minutes)
+	endTime := time.Now().Add(-4 * time.Minute)
 	startTime := endTime.Add(-time.Duration(hoursBack) * time.Hour)
 
 	// Round start time to nearest 2-minute boundary
