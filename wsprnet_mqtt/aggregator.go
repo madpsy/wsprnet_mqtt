@@ -31,9 +31,10 @@ type SpotAggregator struct {
 	spotChan chan *WSPRReportWithSource
 
 	// Control
-	running  bool
-	stopChan chan struct{}
-	wg       sync.WaitGroup
+	running   bool
+	startTime time.Time
+	stopChan  chan struct{}
+	wg        sync.WaitGroup
 }
 
 // WSPRReportWithSource wraps a WSPR report with its source information
@@ -60,6 +61,7 @@ func NewSpotAggregator(wsprNet *WSPRNet, stats *StatisticsTracker, persistenceFi
 // Start starts the aggregator
 func (sa *SpotAggregator) Start() {
 	sa.running = true
+	sa.startTime = time.Now()
 
 	// Start spot processing goroutine
 	sa.wg.Add(1)
@@ -123,6 +125,14 @@ func (sa *SpotAggregator) processSpots() {
 
 // addToWindow adds a report to the appropriate 2-minute window
 func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
+	// Check message age to filter out retained messages
+	messageAge := time.Since(report.EpochTime)
+	if messageAge > 5*time.Minute {
+		// Message is too old (> 5 minutes) - likely a retained message
+		log.Printf("Aggregator: Rejecting old spot for %s (age: %.1f minutes)", report.Callsign, messageAge.Minutes())
+		return
+	}
+
 	// Round timestamp to 2-minute boundary (WSPR cycle time)
 	// WSPR transmissions start at even minutes (00, 02, 04, etc.)
 	timestamp := report.EpochTime.Unix()
@@ -249,12 +259,12 @@ func (sa *SpotAggregator) flushWindows() {
 	}
 }
 
-// flushOldWindows flushes windows that are older than 4 minutes
+// flushOldWindows flushes windows that are older than 60 seconds
 // This gives time for all instances to report their spots for a given window
-// (2 minutes for WSPR transmission + up to 2 minutes for decoding + MQTT latency)
+// Retained messages are filtered by age check in addToWindow()
 func (sa *SpotAggregator) flushOldWindows() {
 	now := time.Now().Unix()
-	flushThreshold := now - 240 // 4 minutes ago
+	flushThreshold := now - 60 // 60 seconds ago
 
 	sa.windowsMu.Lock()
 	windowsToFlush := make(map[int64]map[string]*WSPRReportWithSource)
