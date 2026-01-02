@@ -1114,7 +1114,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Instance</label>
                     <select id="gapsInstanceFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
                         <option value="all">All Instances</option>
-                        <option value="deduped">📤 Deduped (Sent to WSPRNet)</option>
+                        <option value="deduped" selected>📤 Deduped (Sent to WSPRNet)</option>
                     </select>
                 </div>
                 <div>
