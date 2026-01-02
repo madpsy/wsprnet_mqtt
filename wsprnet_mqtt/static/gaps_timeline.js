@@ -33,7 +33,7 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
     // Time labels (show every hour) - use UTC to match backend
     html += '<div style="display: flex; align-items: center; margin-bottom: 5px;">';
     html += '<div style="width: 80px; flex-shrink: 0;"></div>'; // Spacer for alignment
-    html += '<div style="flex: 1; display: flex; justify-content: space-between; font-size: 0.75em; color: #64748b;">';
+    html += '<div style="flex: 1; position: relative; height: 20px; font-size: 0.75em; color: #64748b;">';
     
     const hourLabels = [];
     for (let i = 0; i < allCycles.length; i++) {
