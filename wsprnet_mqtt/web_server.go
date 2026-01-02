@@ -1117,6 +1117,13 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                         <option value="deduped">📤 Deduped (Sent to WSPRNet)</option>
                     </select>
                 </div>
+                <div>
+                    <label style="display: block; color: #94a3b8; font-size: 0.9em; margin-bottom: 5px;">Gap Type</label>
+                    <select id="gapsTypeFilter" style="width: 100%; padding: 8px; background: #1e293b; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px;">
+                        <option value="all">All Gaps</option>
+                        <option value="common">Common Gaps (Affecting Multiple Bands/Instances)</option>
+                    </select>
+                </div>
             </div>
             <div style="display: flex; gap: 10px;">
                 <button class="control-btn" onclick="loadGaps()">🔄 Refresh</button>
@@ -4112,6 +4119,56 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             displayGaps(allGapsData, parseInt(document.getElementById('gapsTimeFilter').value));
         }
 
+        function filterCommonGaps(gaps) {
+            // Find cycles that appear as gaps across multiple bands or instances
+            const cycleCounts = {}; // cycle time -> count of how many band/instance combinations have this gap
+            const cycleDetails = {}; // cycle time -> array of {instance, band}
+            
+            // Count occurrences of each missing cycle
+            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+                bandGaps.forEach(gap => {
+                    gap.missing_cycles.forEach(cycle => {
+                        if (!cycleCounts[cycle]) {
+                            cycleCounts[cycle] = 0;
+                            cycleDetails[cycle] = [];
+                        }
+                        cycleCounts[cycle]++;
+                        cycleDetails[cycle].push({ instance: instance, band: gap.band });
+                    });
+                });
+            });
+            
+            // Find cycles that appear in multiple places (threshold: at least 2)
+            const commonCycles = new Set();
+            Object.entries(cycleCounts).forEach(([cycle, count]) => {
+                if (count >= 2) {
+                    commonCycles.add(cycle);
+                }
+            });
+            
+            // Filter gaps to only include common cycles
+            const filtered = {};
+            Object.entries(gaps).forEach(([instance, bandGaps]) => {
+                const filteredBandGaps = [];
+                bandGaps.forEach(gap => {
+                    const commonMissingCycles = gap.missing_cycles.filter(cycle => commonCycles.has(cycle));
+                    if (commonMissingCycles.length > 0) {
+                        filteredBandGaps.push({
+                            ...gap,
+                            missing_cycles: commonMissingCycles,
+                            gap_count: commonMissingCycles.length,
+                            coverage_rate: ((gap.total_cycles - commonMissingCycles.length) / gap.total_cycles) * 100
+                        });
+                    }
+                });
+                if (filteredBandGaps.length > 0) {
+                    filtered[instance] = filteredBandGaps;
+                }
+            });
+            
+            return filtered;
+        }
+
         function displayGaps(gaps, hoursBack) {
             const summaryContainer = document.getElementById('gapsSummary');
             const detailsContainer = document.getElementById('gapsDetails');
@@ -4126,6 +4183,12 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                 if (gaps[instanceFilter]) {
                     filteredGaps[instanceFilter] = gaps[instanceFilter];
                 }
+            }
+            
+            // Apply gap type filter (common gaps)
+            const gapTypeFilter = document.getElementById('gapsTypeFilter').value;
+            if (gapTypeFilter === 'common') {
+                filteredGaps = filterCommonGaps(filteredGaps);
             }
             
             if (!filteredGaps || Object.keys(filteredGaps).length === 0) {
@@ -4289,6 +4352,9 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             
             // Add event listener for instance filter
             document.getElementById('gapsInstanceFilter').addEventListener('change', filterGapsByInstance);
+            
+            // Add event listener for gap type filter
+            document.getElementById('gapsTypeFilter').addEventListener('change', filterGapsByInstance);
             
             // Initial load
             loadGaps();

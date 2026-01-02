@@ -489,7 +489,8 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 		// Group spots by band
 		bandSpots := make(map[string][]StoredSpot)
 		for _, spot := range spots {
-			if spot.Timestamp.After(startTime) && spot.Timestamp.Before(endTime) {
+			// Use inclusive range: >= startTime and <= endTime
+			if !spot.Timestamp.Before(startTime) && !spot.Timestamp.After(endTime) {
 				bandSpots[spot.Band] = append(bandSpots[spot.Band], spot)
 			}
 		}
@@ -549,7 +550,8 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	// Analyze deduped spots
 	bandSpots := make(map[string][]StoredSpot)
 	for _, spot := range sw.dedupedSpots {
-		if spot.Timestamp.After(startTime) && spot.Timestamp.Before(endTime) {
+		// Use inclusive range: >= startTime and <= endTime
+		if !spot.Timestamp.Before(startTime) && !spot.Timestamp.After(endTime) {
 			bandSpots[spot.Band] = append(bandSpots[spot.Band], spot)
 		}
 	}
