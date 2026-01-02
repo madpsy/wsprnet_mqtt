@@ -8,17 +8,19 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
         return;
     }
 
-    // Calculate time range
+    // Calculate time range (to match backend logic exactly)
     const endTime = new Date();
     const startTime = new Date(endTime.getTime() - (hoursBack * 60 * 60 * 1000));
     
-    // Round to 2-minute boundaries
-    const startMinutes = Math.floor(startTime.getMinutes() / 2) * 2;
-    startTime.setMinutes(startMinutes, 0, 0);
+    // Round to 2-minute boundaries using Unix timestamp (to match backend)
+    // Backend does: startTime = time.Unix((startTime.Unix()/120)*120, 0)
+    const startUnix = Math.floor(startTime.getTime() / 1000);
+    const roundedStartUnix = Math.floor(startUnix / 120) * 120;
+    const roundedStartTime = new Date(roundedStartUnix * 1000);
     
     // Generate all expected cycles
     const allCycles = [];
-    for (let t = new Date(startTime); t <= endTime; t = new Date(t.getTime() + 120000)) {
+    for (let t = new Date(roundedStartTime); t <= endTime; t = new Date(t.getTime() + 120000)) {
         allCycles.push(new Date(t));
     }
     
@@ -28,7 +30,7 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
     // Build timeline HTML
     let html = '<div style="display: flex; flex-direction: column; gap: 8px;">';
     
-    // Time labels (show every hour)
+    // Time labels (show every hour) - use UTC to match backend
     html += '<div style="display: flex; align-items: center; margin-bottom: 5px;">';
     html += '<div style="width: 80px; flex-shrink: 0;"></div>'; // Spacer for alignment
     html += '<div style="flex: 1; display: flex; justify-content: space-between; font-size: 0.75em; color: #64748b;">';
@@ -36,10 +38,10 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
     const hourLabels = [];
     for (let i = 0; i < allCycles.length; i++) {
         const cycle = allCycles[i];
-        if (cycle.getMinutes() === 0) {
+        if (cycle.getUTCMinutes() === 0) {
             hourLabels.push({
                 index: i,
-                label: cycle.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+                label: cycle.toISOString().substr(11, 5) // Format as HH:MM in UTC
             });
         }
     }
@@ -56,12 +58,12 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
     html += '<div style="width: 80px; flex-shrink: 0; font-size: 0.85em; color: #94a3b8; text-align: right; padding-right: 10px;">Coverage:</div>';
     html += '<div style="flex: 1; display: flex; gap: 1px; height: 40px; background: #0f172a; border-radius: 4px; overflow: hidden; padding: 2px;">';
     
-    // Render each cycle as a block
+    // Render each cycle as a block - use UTC to match backend
     allCycles.forEach(cycle => {
-        const timeStr = cycle.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const timeStr = cycle.toISOString().substr(11, 5); // Format as HH:MM in UTC
         const isMissing = missingSet.has(timeStr);
         const color = isMissing ? '#ef4444' : '#10b981';
-        const title = isMissing ? `Missing: ${timeStr}` : `Coverage: ${timeStr}`;
+        const title = isMissing ? `Missing: ${timeStr} UTC` : `Coverage: ${timeStr} UTC`;
         const width = `${100 / allCycles.length}%`;
         
         html += `<div style="flex: 1; background: ${color}; min-width: 2px; border-radius: 2px;" title="${title}"></div>`;
