@@ -125,11 +125,23 @@ func (sa *SpotAggregator) processSpots() {
 
 // addToWindow adds a report to the appropriate 2-minute window
 func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
+	// Determine band early for debug logging
+	band := frequencyToBand(report.ReceiverFreq)
+
+	// Debug logging for GM4DTH on 630m
+	if report.Callsign == "GM4DTH" && band == "630m" {
+		log.Printf("DEBUG [GM4DTH/630m]: Received spot at %s (age: %.1f seconds)",
+			report.EpochTime.Format("15:04:05"), time.Since(report.EpochTime).Seconds())
+	}
+
 	// Check message age to filter out retained messages
 	messageAge := time.Since(report.EpochTime)
 	if messageAge > 5*time.Minute {
 		// Message is too old (> 5 minutes) - likely a retained message
 		log.Printf("Aggregator: Rejecting old spot for %s (age: %.1f minutes)", report.Callsign, messageAge.Minutes())
+		if report.Callsign == "GM4DTH" && band == "630m" {
+			log.Printf("DEBUG [GM4DTH/630m]: REJECTED as too old!")
+		}
 		return
 	}
 
@@ -141,9 +153,6 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 	// Create deduplication key: callsign + mode + window
 	// This ensures we only keep one spot per callsign per 2-minute window
 	dedupKey := fmt.Sprintf("%s_%s_%d", report.Callsign, report.Mode, windowKey)
-
-	// Determine band
-	band := frequencyToBand(report.ReceiverFreq)
 
 	// Write raw spot to file
 	if sa.spotWriter != nil {
@@ -210,6 +219,11 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 			log.Printf("Aggregator: Added spot for %s to window %d",
 				report.Callsign, windowKey)
 		}
+		if report.Callsign == "GM4DTH" && band == "630m" {
+			windowTime := time.Unix(windowKey, 0).UTC()
+			log.Printf("DEBUG [GM4DTH/630m]: Added to window %s (key: %d, dedupKey: %s)",
+				windowTime.Format("15:04:05"), windowKey, dedupKey)
+		}
 	}
 }
 
@@ -267,6 +281,30 @@ func (sa *SpotAggregator) flushOldWindows() {
 	flushThreshold := now - 60 // 60 seconds ago
 
 	sa.windowsMu.Lock()
+
+	// Debug: Check for GM4DTH in active windows
+	has630m := false
+	hasGM4DTH := false
+	for windowKey, spots := range sa.windows {
+		for _, spot := range spots {
+			band := frequencyToBand(spot.ReceiverFreq)
+			if band == "630m" {
+				has630m = true
+			}
+			if spot.Callsign == "GM4DTH" && band == "630m" {
+				hasGM4DTH = true
+				windowTime := time.Unix(windowKey, 0).UTC()
+				age := now - windowKey
+				willFlush := windowKey < flushThreshold
+				log.Printf("DEBUG [GM4DTH/630m]: Found in active window %s (age: %d sec, will flush: %v)",
+					windowTime.Format("15:04:05"), age, willFlush)
+			}
+		}
+	}
+	if has630m {
+		log.Printf("DEBUG [630m]: Active windows contain 630m spots (GM4DTH present: %v)", hasGM4DTH)
+	}
+
 	windowsToFlush := make(map[int64]map[string]*WSPRReportWithSource)
 	for windowKey, spots := range sa.windows {
 		if windowKey < flushThreshold {
@@ -319,6 +357,12 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 		band := frequencyToBand(report.ReceiverFreq)
 		bandSpots[band] = append(bandSpots[band], report)
 		bandBreakdown[band]++
+
+		// Debug logging for GM4DTH
+		if report.Callsign == "GM4DTH" && band == "630m" {
+			log.Printf("DEBUG [GM4DTH/630m]: Flushing window %s - spot will be submitted",
+				windowTime.Format("15:04:05"))
+		}
 	}
 
 	// Get duplicates for this window
@@ -413,6 +457,11 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 				report.Locator,
 				report.InstanceName)
 
+			// Debug logging for GM4DTH
+			if report.Callsign == "GM4DTH" && band == "630m" {
+				log.Printf("DEBUG [GM4DTH/630m]: Submitting to WSPRNet...")
+			}
+
 			// Submit to WSPRNet
 			err := sa.wsprNet.Submit(report.WSPRReport)
 			submitted := (err == nil)
@@ -420,12 +469,22 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 			if err != nil {
 				errorMsg = err.Error()
 				log.Printf("    ERROR: Failed to submit: %v", err)
+				if report.Callsign == "GM4DTH" && band == "630m" {
+					log.Printf("DEBUG [GM4DTH/630m]: Submission FAILED: %v", err)
+				}
+			} else if report.Callsign == "GM4DTH" && band == "630m" {
+				log.Printf("DEBUG [GM4DTH/630m]: Submission SUCCESS")
 			}
 
 			// Write deduped spot with submission status
 			if sa.spotWriter != nil {
 				if writeErr := sa.spotWriter.WriteDeduped(report, submitted, errorMsg); writeErr != nil {
 					log.Printf("    Warning: Failed to write deduped spot: %v", writeErr)
+					if report.Callsign == "GM4DTH" && band == "630m" {
+						log.Printf("DEBUG [GM4DTH/630m]: WriteDeduped FAILED: %v", writeErr)
+					}
+				} else if report.Callsign == "GM4DTH" && band == "630m" {
+					log.Printf("DEBUG [GM4DTH/630m]: WriteDeduped SUCCESS")
 				}
 			}
 		}
