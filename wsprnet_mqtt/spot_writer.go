@@ -570,6 +570,65 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	return result
 }
 
+// ClearAllSpots clears all spot logs from memory and disk
+func (sw *SpotWriter) ClearAllSpots() error {
+	sw.mu.Lock()
+	defer sw.mu.Unlock()
+
+	sw.cacheMu.Lock()
+	defer sw.cacheMu.Unlock()
+
+	log.Println("Clearing all spot logs...")
+
+	// Clear in-memory caches
+	sw.rawSpots = make(map[string][]StoredSpot)
+	sw.dedupedSpots = make([]StoredSpot, 0)
+
+	// Close all open files
+	for _, f := range sw.files {
+		f.Close()
+	}
+	sw.files = make(map[string]*os.File)
+
+	if sw.dedupedFile != nil {
+		sw.dedupedFile.Close()
+	}
+
+	// Delete all spot files
+	entries, err := os.ReadDir(sw.baseDir)
+	if err != nil {
+		return fmt.Errorf("failed to read spots directory: %w", err)
+	}
+
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		filename := entry.Name()
+		// Delete all .jsonl files (instance files and deduped file)
+		if len(filename) > 6 && filename[len(filename)-6:] == ".jsonl" {
+			path := filepath.Join(sw.baseDir, filename)
+			if err := os.Remove(path); err != nil {
+				log.Printf("Warning: Failed to delete spot file %s: %v", filename, err)
+			} else {
+				log.Printf("Deleted spot file: %s", filename)
+			}
+		}
+	}
+
+	// Reopen deduped file
+	dedupedPath := filepath.Join(sw.baseDir, "deduped.jsonl")
+	f, err := os.OpenFile(dedupedPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to reopen deduped file: %w", err)
+	}
+	sw.dedupedFile = f
+
+	log.Println("All spot logs cleared successfully")
+	return nil
+}
+
 // Stop stops the spot writer and closes all files
 func (sw *SpotWriter) Stop() {
 	close(sw.stopChan)

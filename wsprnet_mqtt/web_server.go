@@ -335,7 +335,7 @@ func (ws *WebServer) handleClearStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	log.Println("Admin: Clearing all statistics")
+	log.Println("Admin: Clearing all statistics and spot logs")
 
 	// Clear statistics from memory
 	ws.stats.ClearAllStatistics()
@@ -380,13 +380,22 @@ func (ws *WebServer) handleClearStats(w http.ResponseWriter, r *http.Request) {
 	// Also reset WSPRNet stats
 	ws.wsprnet.ResetStats()
 
+	// Clear all spot logs
+	if ws.spotWriter != nil {
+		if err := ws.spotWriter.ClearAllSpots(); err != nil {
+			log.Printf("Error clearing spot logs: %v", err)
+			http.Error(w, fmt.Sprintf("Failed to clear spot logs: %v", err), http.StatusInternalServerError)
+			return
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status":  "success",
-		"message": "All statistics have been cleared successfully",
+		"message": "All statistics and spot logs have been cleared successfully",
 	})
 
-	log.Println("Admin: All statistics cleared successfully")
+	log.Println("Admin: All statistics and spot logs cleared successfully")
 }
 
 // handleDashboard serves the HTML dashboard
