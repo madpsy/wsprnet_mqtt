@@ -507,6 +507,16 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 		for band, spots := range bandSpots {
 			if band == "630m" {
 				log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' has %d spots on 630m band", instance, len(spots))
+
+				// Count unique callsigns in raw spots
+				uniqueCallsigns := make(map[string]int)
+				for _, spot := range spots {
+					uniqueCallsigns[spot.Callsign]++
+				}
+				log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' - Unique callsigns in raw: %d", instance, len(uniqueCallsigns))
+				for callsign, count := range uniqueCallsigns {
+					log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' -   %s: %d spots", instance, callsign, count)
+				}
 			}
 
 			// Find which cycles have spots
@@ -573,6 +583,28 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	// Analyze deduped spots
 	log.Printf("GAP ANALYSIS DEBUG: Analyzing deduped spots - total in memory: %d", len(sw.dedupedSpots))
 
+	// Count 630m spots before time filtering
+	count630mTotal := 0
+	count630mInRange := 0
+	count630mOutOfRange := 0
+	for _, spot := range sw.dedupedSpots {
+		if spot.Band == "630m" {
+			count630mTotal++
+			if !spot.Timestamp.Before(startTime) && !spot.Timestamp.After(endTime) {
+				count630mInRange++
+			} else {
+				count630mOutOfRange++
+				if count630mOutOfRange <= 3 {
+					log.Printf("GAP ANALYSIS DEBUG [630m]: Out-of-range spot: %s at %s (outside %s to %s)",
+						spot.Callsign, spot.Timestamp.Format("2006-01-02 15:04:05"),
+						startTime.Format("2006-01-02 15:04:05"), endTime.Format("2006-01-02 15:04:05"))
+				}
+			}
+		}
+	}
+	log.Printf("GAP ANALYSIS DEBUG [630m]: Total 630m deduped spots: %d (in range: %d, out of range: %d)",
+		count630mTotal, count630mInRange, count630mOutOfRange)
+
 	bandSpots := make(map[string][]StoredSpot)
 	for _, spot := range sw.dedupedSpots {
 		// Use inclusive range: >= startTime and <= endTime
@@ -589,11 +621,22 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	for band, spots := range bandSpots {
 		if band == "630m" {
 			log.Printf("GAP ANALYSIS DEBUG [630m]: Deduped has %d spots on 630m band", len(spots))
+
+			// Count unique callsigns
+			uniqueCallsigns := make(map[string]int)
+			for _, spot := range spots {
+				uniqueCallsigns[spot.Callsign]++
+			}
+			log.Printf("GAP ANALYSIS DEBUG [630m]: Unique callsigns in deduped: %d", len(uniqueCallsigns))
+			for callsign, count := range uniqueCallsigns {
+				log.Printf("GAP ANALYSIS DEBUG [630m]:   %s: %d spots", callsign, count)
+			}
+
 			// Log first few spots for inspection
 			for i, spot := range spots {
 				if i < 5 {
-					log.Printf("GAP ANALYSIS DEBUG [630m]:   Sample spot %d: %s at %s from instance '%s'",
-						i+1, spot.Callsign, spot.Timestamp.Format("15:04:05"), spot.Instance)
+					log.Printf("GAP ANALYSIS DEBUG [630m]:   Sample spot %d: %s at %s from instance '%s' (submitted: %v)",
+						i+1, spot.Callsign, spot.Timestamp.Format("15:04:05"), spot.Instance, spot.Submitted)
 				}
 			}
 		}
