@@ -9,11 +9,16 @@ function renderGapTimeline(containerId, gapData, hoursBack) {
     }
 
     // Calculate time range (to match backend logic exactly)
-    const endTime = new Date();
-    const startTime = new Date(endTime.getTime() - (hoursBack * 60 * 60 * 1000));
+    // Subtract 4 minutes from now to exclude incomplete WSPR cycles (matches backend)
+    let endTime = new Date(Date.now() - (4 * 60 * 1000));
     
-    // Round to 2-minute boundaries using Unix timestamp (to match backend)
-    // Backend does: startTime = time.Unix((startTime.Unix()/120)*120, 0)
+    // Round both start and end times to 2-minute boundaries (to match backend)
+    // Backend does: endTime = time.Unix((endTime.Unix()/120)*120, 0)
+    const endUnix = Math.floor(endTime.getTime() / 1000);
+    const roundedEndUnix = Math.floor(endUnix / 120) * 120;
+    endTime = new Date(roundedEndUnix * 1000);
+    
+    const startTime = new Date(endTime.getTime() - (hoursBack * 60 * 60 * 1000));
     const startUnix = Math.floor(startTime.getTime() / 1000);
     const roundedStartUnix = Math.floor(startUnix / 120) * 120;
     const roundedStartTime = new Date(roundedStartUnix * 1000);
