@@ -4322,6 +4322,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                                 <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Coverage Timeline:</div>
                                 <div id="timeline_${gap.instance}_${band.replace(/[^a-zA-Z0-9]/g, '_')}" class="gap-timeline" style="min-height: 80px;"></div>
                         </div>
+                            </div>
                     ` + "`" + `;
                 });
 
