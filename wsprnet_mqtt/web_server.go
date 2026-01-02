@@ -4343,7 +4343,14 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             const container = document.getElementById(containerId);
             if (!container) return;
 
-            const endTime = new Date();
+            // Subtract 4 minutes from now to exclude incomplete WSPR cycles (matches backend)
+            let endTime = new Date(Date.now() - (4 * 60 * 1000));
+            
+            // Round endTime to 2-minute boundary
+            const endUnix = Math.floor(endTime.getTime() / 1000);
+            const roundedEndUnix = Math.floor(endUnix / 120) * 120;
+            endTime = new Date(roundedEndUnix * 1000);
+            
             const startTime = new Date(endTime.getTime() - (hoursBack * 60 * 60 * 1000));
             const startMinutes = Math.floor(startTime.getMinutes() / 2) * 2;
             startTime.setMinutes(startMinutes, 0, 0);
