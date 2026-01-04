@@ -562,25 +562,23 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 				missingCycles[i] = m.formatted
 			}
 
-			// Only include if there are gaps
-			if len(missingCycles) > 0 {
-				coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
+			// Always include band, even if there are no gaps
+			coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
 
-				if band == "630m" {
-					log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' - Coverage: %.1f%% (%d cycles with spots / %d total expected)",
-						instance, coverageRate, len(cyclesWithSpots), totalExpectedCycles)
-					log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' - Missing %d cycles", instance, len(missingCycles))
-				}
-
-				result[instance] = append(result[instance], GapInfo{
-					Instance:      instance,
-					Band:          band,
-					MissingCycles: missingCycles,
-					GapCount:      len(missingCycles),
-					TotalCycles:   totalExpectedCycles,
-					CoverageRate:  coverageRate,
-				})
+			if band == "630m" {
+				log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' - Coverage: %.1f%% (%d cycles with spots / %d total expected)",
+					instance, coverageRate, len(cyclesWithSpots), totalExpectedCycles)
+				log.Printf("GAP ANALYSIS DEBUG [630m]: Instance '%s' - Missing %d cycles", instance, len(missingCycles))
 			}
+
+			result[instance] = append(result[instance], GapInfo{
+				Instance:      instance,
+				Band:          band,
+				MissingCycles: missingCycles,
+				GapCount:      len(missingCycles),
+				TotalCycles:   totalExpectedCycles,
+				CoverageRate:  coverageRate,
+			})
 		}
 	}
 
@@ -684,25 +682,23 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 			missingCycles[i] = m.formatted
 		}
 
-		// Only include if there are gaps
-		if len(missingCycles) > 0 {
-			coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
+		// Always include band, even if there are no gaps
+		coverageRate := float64(len(cyclesWithSpots)) / float64(totalExpectedCycles) * 100
 
-			if band == "630m" {
-				log.Printf("GAP ANALYSIS DEBUG [630m]: Deduped - Coverage: %.1f%% (%d cycles with spots / %d total expected)",
-					coverageRate, len(cyclesWithSpots), totalExpectedCycles)
-				log.Printf("GAP ANALYSIS DEBUG [630m]: Deduped - Missing %d cycles", len(missingCycles))
-			}
-
-			result["deduped"] = append(result["deduped"], GapInfo{
-				Instance:      "deduped",
-				Band:          band,
-				MissingCycles: missingCycles,
-				GapCount:      len(missingCycles),
-				TotalCycles:   totalExpectedCycles,
-				CoverageRate:  coverageRate,
-			})
+		if band == "630m" {
+			log.Printf("GAP ANALYSIS DEBUG [630m]: Deduped - Coverage: %.1f%% (%d cycles with spots / %d total expected)",
+				coverageRate, len(cyclesWithSpots), totalExpectedCycles)
+			log.Printf("GAP ANALYSIS DEBUG [630m]: Deduped - Missing %d cycles", len(missingCycles))
 		}
+
+		result["deduped"] = append(result["deduped"], GapInfo{
+			Instance:      "deduped",
+			Band:          band,
+			MissingCycles: missingCycles,
+			GapCount:      len(missingCycles),
+			TotalCycles:   totalExpectedCycles,
+			CoverageRate:  coverageRate,
+		})
 	}
 
 	log.Printf("GAP ANALYSIS DEBUG: Analysis complete, returning results for %d instances", len(result))
