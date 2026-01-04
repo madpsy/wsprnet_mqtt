@@ -197,6 +197,15 @@ input:focus, select:focus {
     display: flex;
 }
 
+/* Hide the restart modal by default - it uses .show class to display */
+#restart-modal {
+    display: none;
+}
+
+#restart-modal.show {
+    display: flex;
+}
+
 .modal-content {
     background: white;
     border-radius: 12px;

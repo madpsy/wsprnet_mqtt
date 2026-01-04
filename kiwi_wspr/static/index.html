@@ -93,8 +93,11 @@
                 <button class="btn btn-secondary" onclick="exportConfig()" style="padding: 15px 30px; font-size: 16px; margin-right: 10px;">
                     📥 Export Config
                 </button>
-                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()" style="padding: 15px 30px; font-size: 16px;">
+                <button class="btn btn-secondary" onclick="document.getElementById('import-file').click()" style="padding: 15px 30px; font-size: 16px; margin-right: 10px;">
                     📤 Import Config
+                </button>
+                <button class="btn btn-danger" onclick="showRestartModal()" style="padding: 15px 30px; font-size: 16px;">
+                    🔄 Restart
                 </button>
                 <input type="file" id="import-file" accept=".json" style="display: none;" onchange="importConfig(event)">
             </div>
@@ -110,6 +113,33 @@
             </div>
             <div class="modal-body" id="users-modal-body">
                 <p>Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Restart Modal -->
+    <div id="restart-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>⚠️ Restart Application</h2>
+                <span class="close" onclick="closeRestartModal()">&times;</span>
+            </div>
+            <div class="modal-body">
+                <p style="margin-bottom: 15px; line-height: 1.6;">
+                    <strong>Note:</strong> A restart is <strong>not needed</strong> for saving configuration changes.
+                    Configuration changes are applied automatically when you save.
+                </p>
+                <p style="margin-bottom: 15px; line-height: 1.6;">
+                    A restart is only useful if something is wrong with the application (e.g., stuck connections,
+                    unexpected behavior, or troubleshooting issues).
+                </p>
+                <p style="margin-bottom: 0; line-height: 1.6; color: #ef4444; font-weight: 600;">
+                    Are you sure you want to restart the application?
+                </p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" onclick="closeRestartModal()">Cancel</button>
+                <button class="btn btn-danger" onclick="confirmRestart()">🔄 Restart Now</button>
             </div>
         </div>
     </div>

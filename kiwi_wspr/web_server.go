@@ -73,6 +73,7 @@ func (ws *WebServer) Start() error {
 	http.HandleFunc("/api/kiwi/users", ws.handleKiwiUsers)
 	http.HandleFunc("/api/kiwi/user-mapping", ws.handleUserMapping)
 	http.HandleFunc("/api/mqtt/test", ws.handleMQTTTest)
+	http.HandleFunc("/api/restart", ws.handleRestart)
 
 	addr := fmt.Sprintf(":%d", ws.port)
 	log.Printf("Web interface starting on http://localhost%s", addr)
@@ -385,4 +386,33 @@ func (ws *WebServer) handleUserMapping(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(mapping)
+}
+
+// handleRestart triggers an application restart by exiting the process
+// Docker will automatically restart the container
+func (ws *WebServer) handleRestart(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	log.Println("Restart requested via web interface")
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "success",
+		"message": "Application restarting...",
+	})
+
+	// Flush the response to ensure it's sent before we exit
+	if f, ok := w.(http.Flusher); ok {
+		f.Flush()
+	}
+
+	// Exit the process in a goroutine to allow the response to be sent
+	go func() {
+		time.Sleep(100 * time.Millisecond)
+		log.Println("Exiting for restart...")
+		os.Exit(0)
+	}()
 }

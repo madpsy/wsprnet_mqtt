@@ -1086,13 +1086,86 @@ function closeUsersModal() {
     currentModalInstance = null;
 }
 
+// Show restart modal
+function showRestartModal() {
+    const modal = document.getElementById('restart-modal');
+    modal.classList.add('show');
+}
+
+// Close restart modal
+function closeRestartModal() {
+    const modal = document.getElementById('restart-modal');
+    modal.classList.remove('show');
+}
+
+// Confirm and execute restart
+async function confirmRestart() {
+    closeRestartModal();
+    
+    // Show alert that restart is in progress
+    showAlert('🔄 Restarting application... The page will reload automatically.', 'success');
+    
+    try {
+        const response = await fetch('/api/restart', {
+            method: 'POST'
+        });
+        
+        if (response.ok) {
+            // Wait a moment for the process to exit
+            setTimeout(() => {
+                // Try to reload the page every 2 seconds until the server is back
+                const reloadInterval = setInterval(() => {
+                    fetch('/api/config')
+                        .then(response => {
+                            if (response.ok) {
+                                clearInterval(reloadInterval);
+                                window.location.reload();
+                            }
+                        })
+                        .catch(() => {
+                            // Server not ready yet, keep trying
+                        });
+                }, 2000);
+            }, 1000);
+        } else {
+            showAlert('❌ Failed to restart application', 'error');
+        }
+    } catch (e) {
+        // This is expected as the server will disconnect
+        // Start polling for server to come back
+        setTimeout(() => {
+            const reloadInterval = setInterval(() => {
+                fetch('/api/config')
+                    .then(response => {
+                        if (response.ok) {
+                            clearInterval(reloadInterval);
+                            window.location.reload();
+                        }
+                    })
+                    .catch(() => {
+                        // Server not ready yet, keep trying
+                    });
+            }, 2000);
+        }, 1000);
+    }
+}
+
 // Close modal when clicking outside
 document.addEventListener('DOMContentLoaded', () => {
-    const modal = document.getElementById('users-modal');
-    if (modal) {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
+    const usersModal = document.getElementById('users-modal');
+    if (usersModal) {
+        usersModal.addEventListener('click', (e) => {
+            if (e.target === usersModal) {
                 closeUsersModal();
+            }
+        });
+    }
+    
+    const restartModal = document.getElementById('restart-modal');
+    if (restartModal) {
+        restartModal.addEventListener('click', (e) => {
+            if (e.target === restartModal) {
+                closeRestartModal();
             }
         });
     }
