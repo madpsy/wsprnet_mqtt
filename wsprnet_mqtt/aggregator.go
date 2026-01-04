@@ -11,6 +11,7 @@ import (
 // SpotAggregator aggregates and deduplicates WSPR spots within 2-minute windows
 type SpotAggregator struct {
 	wsprNet         *WSPRNet
+	pskReporter     *PSKReporter
 	stats           *StatisticsTracker
 	persistenceFile string
 	spotWriter      *SpotWriter
@@ -45,9 +46,10 @@ type WSPRReportWithSource struct {
 }
 
 // NewSpotAggregator creates a new spot aggregator
-func NewSpotAggregator(wsprNet *WSPRNet, stats *StatisticsTracker, persistenceFile string, spotWriter *SpotWriter) *SpotAggregator {
+func NewSpotAggregator(wsprNet *WSPRNet, pskReporter *PSKReporter, stats *StatisticsTracker, persistenceFile string, spotWriter *SpotWriter) *SpotAggregator {
 	return &SpotAggregator{
 		wsprNet:         wsprNet,
+		pskReporter:     pskReporter,
 		stats:           stats,
 		persistenceFile: persistenceFile,
 		spotWriter:      spotWriter,
@@ -513,12 +515,24 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 			errorMsg := ""
 			if err != nil {
 				errorMsg = err.Error()
-				log.Printf("    ERROR: Failed to submit: %v", err)
+				log.Printf("    ERROR: Failed to submit to WSPRNet: %v", err)
 				if band == "630m" {
-					log.Printf("DEBUG [630m]: %s from %s submission FAILED: %v", report.Callsign, report.InstanceName, err)
+					log.Printf("DEBUG [630m]: %s from %s WSPRNet submission FAILED: %v", report.Callsign, report.InstanceName, err)
 				}
 			} else if band == "630m" {
-				log.Printf("DEBUG [630m]: %s from %s submission SUCCESS", report.Callsign, report.InstanceName)
+				log.Printf("DEBUG [630m]: %s from %s WSPRNet submission SUCCESS", report.Callsign, report.InstanceName)
+			}
+
+			// Submit to PSKReporter if enabled
+			if sa.pskReporter != nil {
+				if pskErr := sa.pskReporter.Submit(report.WSPRReport); pskErr != nil {
+					log.Printf("    ERROR: Failed to submit to PSKReporter: %v", pskErr)
+					if band == "630m" {
+						log.Printf("DEBUG [630m]: %s from %s PSKReporter submission FAILED: %v", report.Callsign, report.InstanceName, pskErr)
+					}
+				} else if band == "630m" {
+					log.Printf("DEBUG [630m]: %s from %s PSKReporter submission SUCCESS", report.Callsign, report.InstanceName)
+				}
 			}
 
 			// Write deduped spot with submission status
@@ -581,9 +595,13 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 
 	// Save statistics to disk if persistence is enabled
 	if sa.persistenceFile != "" {
-		// Get WSPRNet stats and save them
+		// Get WSPRNet and PSKReporter stats and save them
 		wsprnetStats := sa.wsprNet.GetStats()
-		if err := sa.stats.SaveToFileWithWSPRNet(sa.persistenceFile, wsprnetStats); err != nil {
+		var pskReporterStats map[string]interface{}
+		if sa.pskReporter != nil {
+			pskReporterStats = sa.pskReporter.GetStats()
+		}
+		if err := sa.stats.SaveToFileWithReporters(sa.persistenceFile, wsprnetStats, pskReporterStats); err != nil {
 			log.Printf("Warning: Failed to save statistics: %v", err)
 		}
 	}

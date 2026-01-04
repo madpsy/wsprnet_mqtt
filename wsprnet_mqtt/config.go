@@ -21,6 +21,7 @@ type Config struct {
 type ReceiverConfig struct {
 	Callsign string `yaml:"callsign" json:"callsign"`
 	Locator  string `yaml:"locator" json:"locator"`
+	Antenna  string `yaml:"antenna" json:"antenna"` // Optional antenna description for PSKReporter
 }
 
 // MQTTConfig contains MQTT broker configuration

@@ -43,7 +43,7 @@ func main() {
 	}
 
 	if config.DryRun {
-		log.Println("*** DRY RUN MODE ENABLED - No reports will be sent to WSPRNet ***")
+		log.Println("*** DRY RUN MODE ENABLED - No reports will be sent to WSPRNet or PSKReporter ***")
 	}
 
 	// Initialize WSPRNet client
@@ -66,6 +66,30 @@ func main() {
 
 	log.Println("WSPRNet client initialized")
 
+	// Initialize PSKReporter client (always enabled, dry_run controls actual sending)
+	log.Printf("PSKReporter: Initializing for %s (%s)", config.Receiver.Callsign, config.Receiver.Locator)
+	if config.Receiver.Antenna != "" {
+		log.Printf("PSKReporter: Antenna: %s", config.Receiver.Antenna)
+	}
+
+	pskReporter, err := NewPSKReporter(
+		config.Receiver.Callsign,
+		config.Receiver.Locator,
+		"UberSDR WSPR",
+		config.Receiver.Antenna,
+	)
+	if err != nil {
+		log.Fatalf("Failed to initialize PSKReporter: %v", err)
+	}
+
+	// Connect to PSKReporter
+	if err := pskReporter.Connect(); err != nil {
+		log.Fatalf("Failed to connect to PSKReporter: %v", err)
+	}
+	defer pskReporter.Stop()
+
+	log.Println("PSKReporter client initialized")
+
 	// Initialize statistics tracker
 	stats := NewStatisticsTracker()
 
@@ -74,10 +98,11 @@ func main() {
 
 	// Load persisted statistics if available
 	var wsprnetStats *WSPRNetStats
+	var pskReporterStats *PSKReporterStats
 	if config.PersistenceFile != "" {
 		log.Printf("Loading persisted statistics from %s...", config.PersistenceFile)
 		var err error
-		wsprnetStats, err = stats.LoadFromFile(config.PersistenceFile)
+		wsprnetStats, pskReporterStats, err = stats.LoadFromFile(config.PersistenceFile)
 		if err != nil {
 			log.Printf("Warning: Failed to load persisted statistics: %v", err)
 		} else {
@@ -86,6 +111,10 @@ func main() {
 				log.Printf("Restoring WSPRNet stats: %d successful, %d failed, %d retries",
 					wsprnetStats.Successful, wsprnetStats.Failed, wsprnetStats.Retries)
 				wsprNet.SetStats(wsprnetStats.Successful, wsprnetStats.Failed, wsprnetStats.Retries)
+			}
+			if pskReporterStats != nil && pskReporter != nil {
+				log.Printf("Restoring PSKReporter stats: %d successful", pskReporterStats.Successful)
+				pskReporter.SetStats(pskReporterStats.Successful)
 			}
 		}
 	}
@@ -98,7 +127,7 @@ func main() {
 	defer spotWriter.Stop()
 
 	// Initialize spot aggregator for deduplication
-	aggregator := NewSpotAggregator(wsprNet, stats, config.PersistenceFile, spotWriter)
+	aggregator := NewSpotAggregator(wsprNet, pskReporter, stats, config.PersistenceFile, spotWriter)
 	aggregator.Start()
 	defer aggregator.Stop()
 

@@ -761,6 +761,10 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 <input type="text" id="locator" placeholder="e.g., FN42">
             </div>
         </div>
+        <div class="form-group">
+            <label for="antenna">Antenna (optional, for PSKReporter)</label>
+            <input type="text" id="antenna" placeholder="e.g., Dipole, Vertical, Loop">
+        </div>
     </div>
 
     <div class="container">
@@ -814,7 +818,7 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
         </div>
         <div class="form-group checkbox-group">
             <input type="checkbox" id="dryRun">
-            <label for="dryRun" style="margin-bottom: 0;">Dry Run Mode (don't send to WSPRNet)</label>
+            <label for="dryRun" style="margin-bottom: 0;">Dry Run Mode (don't send to WSPRNet or PSKReporter)</label>
         </div>
         <div class="form-group">
             <label for="adminPassword">Admin Password</label>
@@ -855,6 +859,7 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
                 // Populate form fields
                 document.getElementById('callsign').value = config.receiver.callsign || '';
                 document.getElementById('locator').value = config.receiver.locator || '';
+                document.getElementById('antenna').value = config.receiver.antenna || '';
                 document.getElementById('broker').value = config.mqtt.broker || '';
                 document.getElementById('username').value = config.mqtt.username || '';
                 document.getElementById('password').value = config.mqtt.password || '';
@@ -974,7 +979,8 @@ func (ah *AdminHandler) getAdminDashboardHTML() string {
             const newConfig = {
                 receiver: {
                     callsign: document.getElementById('callsign').value,
-                    locator: document.getElementById('locator').value
+                    locator: document.getElementById('locator').value,
+                    antenna: document.getElementById('antenna').value
                 },
                 mqtt: {
                     broker: document.getElementById('broker').value,

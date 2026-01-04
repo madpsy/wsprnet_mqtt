@@ -76,14 +76,15 @@ type WindowStats struct {
 
 // PersistenceData contains all statistics data for saving/loading
 type PersistenceData struct {
-	SavedAt      time.Time                               `json:"saved_at"`
-	Windows      []*WindowStats                          `json:"windows"`
-	Instances    map[string]*InstanceStats               `json:"instances"`
-	CountryStats map[string]*CountryStatsExport          `json:"country_stats"`
-	MapSpots     map[string]*SpotLocation                `json:"map_spots"`
-	SNRHistory   map[string]map[string][]SNRHistoryPoint `json:"snr_history"`
-	TotalStats   OverallStats                            `json:"total_stats"`
-	WSPRNetStats WSPRNetStats                            `json:"wsprnet_stats"`
+	SavedAt          time.Time                               `json:"saved_at"`
+	Windows          []*WindowStats                          `json:"windows"`
+	Instances        map[string]*InstanceStats               `json:"instances"`
+	CountryStats     map[string]*CountryStatsExport          `json:"country_stats"`
+	MapSpots         map[string]*SpotLocation                `json:"map_spots"`
+	SNRHistory       map[string]map[string][]SNRHistoryPoint `json:"snr_history"`
+	TotalStats       OverallStats                            `json:"total_stats"`
+	WSPRNetStats     WSPRNetStats                            `json:"wsprnet_stats"`
+	PSKReporterStats PSKReporterStats                        `json:"pskreporter_stats"`
 }
 
 // WSPRNetStats contains WSPRNet submission statistics
@@ -91,6 +92,11 @@ type WSPRNetStats struct {
 	Successful int `json:"successful"`
 	Failed     int `json:"failed"`
 	Retries    int `json:"retries"`
+}
+
+// PSKReporterStats contains PSKReporter submission statistics
+type PSKReporterStats struct {
+	Successful int `json:"successful"`
 }
 
 // CountryStatsExport is a serializable version of CountryStats
@@ -825,13 +831,18 @@ func (st *StatisticsTracker) GetCountryStats() map[string][]map[string]interface
 	return result
 }
 
-// SaveToFile saves all statistics to a JSON file (without WSPRNet stats)
+// SaveToFile saves all statistics to a JSON file (without reporter stats)
 func (st *StatisticsTracker) SaveToFile(filename string) error {
-	return st.SaveToFileWithWSPRNet(filename, nil)
+	return st.SaveToFileWithReporters(filename, nil, nil)
 }
 
 // SaveToFileWithWSPRNet saves all statistics including WSPRNet stats to a JSON file
 func (st *StatisticsTracker) SaveToFileWithWSPRNet(filename string, wsprnetStats map[string]interface{}) error {
+	return st.SaveToFileWithReporters(filename, wsprnetStats, nil)
+}
+
+// SaveToFileWithReporters saves all statistics including WSPRNet and PSKReporter stats to a JSON file
+func (st *StatisticsTracker) SaveToFileWithReporters(filename string, wsprnetStats, pskReporterStats map[string]interface{}) error {
 	// Gather all data with appropriate locks
 	st.recentWindowsMu.RLock()
 	windows := make([]*WindowStats, len(st.recentWindows))
@@ -904,16 +915,25 @@ func (st *StatisticsTracker) SaveToFileWithWSPRNet(filename string, wsprnetStats
 		}
 	}
 
+	// Extract PSKReporter stats if provided
+	pskReporterStatsData := PSKReporterStats{}
+	if pskReporterStats != nil {
+		if successful, ok := pskReporterStats["successful"].(int); ok {
+			pskReporterStatsData.Successful = successful
+		}
+	}
+
 	// Create persistence data structure
 	data := PersistenceData{
-		SavedAt:      time.Now(),
-		Windows:      windows,
-		Instances:    instances,
-		CountryStats: countryStats,
-		MapSpots:     mapSpots,
-		SNRHistory:   snrHistory,
-		TotalStats:   totalStats,
-		WSPRNetStats: wsprnetStatsData,
+		SavedAt:          time.Now(),
+		Windows:          windows,
+		Instances:        instances,
+		CountryStats:     countryStats,
+		MapSpots:         mapSpots,
+		SNRHistory:       snrHistory,
+		TotalStats:       totalStats,
+		WSPRNetStats:     wsprnetStatsData,
+		PSKReporterStats: pskReporterStatsData,
 	}
 
 	// Marshal to JSON
@@ -931,24 +951,24 @@ func (st *StatisticsTracker) SaveToFileWithWSPRNet(filename string, wsprnetStats
 }
 
 // LoadFromFile loads all statistics from a JSON file and filters to last 24 hours
-// Returns WSPRNet stats separately so they can be restored to the WSPRNet client
-func (st *StatisticsTracker) LoadFromFile(filename string) (*WSPRNetStats, error) {
+// Returns WSPRNet and PSKReporter stats separately so they can be restored to the clients
+func (st *StatisticsTracker) LoadFromFile(filename string) (*WSPRNetStats, *PSKReporterStats, error) {
 	// Check if file exists
 	if _, err := os.Stat(filename); os.IsNotExist(err) {
 		// File doesn't exist yet, that's okay
-		return nil, nil
+		return nil, nil, nil
 	}
 
 	// Read file
 	jsonData, err := os.ReadFile(filename)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read persistence file: %w", err)
+		return nil, nil, fmt.Errorf("failed to read persistence file: %w", err)
 	}
 
 	// Unmarshal data
 	var data PersistenceData
 	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal persistence data: %w", err)
+		return nil, nil, fmt.Errorf("failed to unmarshal persistence data: %w", err)
 	}
 
 	// Restore all windows (will be filtered at query time and cleaned up periodically)
@@ -1010,8 +1030,8 @@ func (st *StatisticsTracker) LoadFromFile(filename string) (*WSPRNetStats, error
 	st.totalUnique = data.TotalStats.TotalUnique
 	st.statsMu.Unlock()
 
-	// Return WSPRNet stats for restoration
-	return &data.WSPRNetStats, nil
+	// Return WSPRNet and PSKReporter stats for restoration
+	return &data.WSPRNetStats, &data.PSKReporterStats, nil
 }
 
 // GetOverallStats returns overall statistics

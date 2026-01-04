@@ -1,11 +1,12 @@
 # WSPR MQTT Aggregator Configuration
 
 # Receiver station information
-# This is the callsign and locator that will be reported to WSPRNet
+# This is the callsign and locator that will be reported to WSPRNet and PSKReporter
 # as the receiving station for all aggregated spots
 receiver:
   callsign: "G0ABC"      # Your callsign
   locator: "IO91"        # Your Maidenhead locator (4 or 6 characters)
+  antenna: ""            # Optional antenna description for PSKReporter (e.g., "Dipole", "Vertical", "Loop")
 
 # MQTT broker configuration
 mqtt:
@@ -26,7 +27,7 @@ mqtt:
 # Web dashboard port (default: 9009)
 web_port: 9009
 
-# Dry run mode - if true, will log what would be sent but not actually submit to WSPRNet
+# Dry run mode - if true, will log what would be sent but not actually submit to WSPRNet or PSKReporter
 dry_run: false
 
 # Persistence file for statistics (default: wsprnet_stats.jsonl)
