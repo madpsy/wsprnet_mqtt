@@ -17,6 +17,7 @@ const (
 	PSKMinSecondsBetweenReports = 120
 	PSKMaxUDPPayloadSize        = 1342
 	PSKMaxQueueSize             = 10000
+	PSKMaxRetries               = 3
 )
 
 // PSKReport represents a single spot report for PSKReporter
@@ -311,9 +312,9 @@ func (psk *PSKReporter) makePackets() int {
 	// Update packet length in header
 	binary.BigEndian.PutUint16(packet[2:4], uint16(offset))
 
-	// Send packet
-	if err := psk.sendPacket(packet[:offset]); err != nil {
-		log.Printf("PSKReporter: Error sending packet: %v", err)
+	// Send packet with retries
+	if err := psk.sendPacketWithRetry(packet[:offset]); err != nil {
+		log.Printf("PSKReporter: Failed to send packet after %d retries: %v", PSKMaxRetries, err)
 	}
 
 	// Update tracking
@@ -538,11 +539,37 @@ func (psk *PSKReporter) sendPacket(packet []byte) error {
 
 	_, err := psk.conn.Write(packet)
 	if err != nil {
-		log.Printf("PSKReporter: Failed to send packet: %v", err)
 		return err
 	}
 
 	return nil
+}
+
+// sendPacketWithRetry sends a packet with exponential backoff retry
+func (psk *PSKReporter) sendPacketWithRetry(packet []byte) error {
+	var lastErr error
+
+	for attempt := 0; attempt <= PSKMaxRetries; attempt++ {
+		err := psk.sendPacket(packet)
+		if err == nil {
+			if attempt > 0 {
+				log.Printf("PSKReporter: Successfully sent packet after %d retry/retries", attempt)
+			}
+			return nil
+		}
+
+		lastErr = err
+
+		if attempt < PSKMaxRetries {
+			// Exponential backoff: 1s, 2s, 4s
+			backoff := time.Duration(1<<uint(attempt)) * time.Second
+			log.Printf("PSKReporter: Send failed (attempt %d/%d): %v, retrying in %v",
+				attempt+1, PSKMaxRetries+1, err, backoff)
+			time.Sleep(backoff)
+		}
+	}
+
+	return fmt.Errorf("failed after %d attempts: %w", PSKMaxRetries+1, lastErr)
 }
 
 // Stop stops the PSKReporter
