@@ -399,39 +399,50 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
+	log.Printf("DEBUG GetActiveUsersByInstance: Total coordinators=%d", len(cm.coordinators))
+
 	usersByInstance := make(map[string][]KiwiUser)
 
 	// Track which instances we've already queried to avoid duplicates
 	queriedInstances := make(map[string]bool)
 
 	// Iterate through all coordinators and get their active users
-	for _, coord := range cm.coordinators {
+	for coordName, coord := range cm.coordinators {
+		log.Printf("DEBUG GetActiveUsersByInstance: Processing coordinator %s", coordName)
+		
 		// Get the band config to find the instance name
 		var instanceName string
 		for _, band := range cm.appConfig.WSPRBands {
 			if coord.GetDisplayName() == band.Name {
 				instanceName = band.Instance
+				log.Printf("DEBUG GetActiveUsersByInstance: Found instance name '%s' for band '%s'", instanceName, band.Name)
 				break
 			}
 		}
 
 		if instanceName == "" {
+			log.Printf("DEBUG GetActiveUsersByInstance: No instance name found for coordinator %s (display name: %s)", coordName, coord.GetDisplayName())
 			continue
 		}
 
 		// Skip if we've already queried this instance
 		if queriedInstances[instanceName] {
+			log.Printf("DEBUG GetActiveUsersByInstance: Skipping instance '%s' (already queried)", instanceName)
 			continue
 		}
 		queriedInstances[instanceName] = true
 
 		// Get active users from this coordinator
 		users := coord.GetActiveUsers()
+		log.Printf("DEBUG GetActiveUsersByInstance: Instance '%s' has %d active users", instanceName, len(users))
+		
 		if len(users) > 0 {
 			usersByInstance[instanceName] = users
+			log.Printf("DEBUG GetActiveUsersByInstance: Added %d users for instance '%s'", len(users), instanceName)
 		}
 	}
 
+	log.Printf("DEBUG GetActiveUsersByInstance: Returning %d instances with users", len(usersByInstance))
 	return usersByInstance
 }
 
