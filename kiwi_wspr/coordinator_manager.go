@@ -358,8 +358,9 @@ func (cm *CoordinatorManager) GetDetailedStatus() map[string]interface{} {
 			"error":             "",
 		}
 
-		// Check if this band has a running coordinator
-		if coord, exists := cm.coordinators[band.Name]; exists {
+		// Check if this band has a running coordinator using composite key
+		key := fmt.Sprintf("%s/%s", band.Instance, band.Name)
+		if coord, exists := cm.coordinators[key]; exists {
 			// Get decode statistics and recording status
 			lastDecodeTime, lastDecodeCount, recordingState, lastError, reconnectCount := coord.GetStatus()
 
@@ -405,8 +406,6 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
-	log.Printf("DEBUG GetActiveUsersByInstance: Total coordinators=%d", len(cm.coordinators))
-
 	usersByInstance := make(map[string][]KiwiUser)
 
 	// Track which instances we've already queried to avoid duplicates
@@ -414,35 +413,27 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 
 	// Iterate through all coordinators and get their active users
 	for coordKey, coord := range cm.coordinators {
-		log.Printf("DEBUG GetActiveUsersByInstance: Processing coordinator %s", coordKey)
-		
 		// Extract instance name from key (format: "instance/band")
 		parts := strings.SplitN(coordKey, "/", 2)
 		if len(parts) != 2 {
-			log.Printf("DEBUG GetActiveUsersByInstance: Invalid coordinator key format: %s", coordKey)
 			continue
 		}
 		instanceName := parts[0]
-		log.Printf("DEBUG GetActiveUsersByInstance: Extracted instance name '%s' from key '%s'", instanceName, coordKey)
 
 		// Skip if we've already queried this instance
 		if queriedInstances[instanceName] {
-			log.Printf("DEBUG GetActiveUsersByInstance: Skipping instance '%s' (already queried)", instanceName)
 			continue
 		}
 		queriedInstances[instanceName] = true
 
 		// Get active users from this coordinator
 		users := coord.GetActiveUsers()
-		log.Printf("DEBUG GetActiveUsersByInstance: Instance '%s' has %d active users", instanceName, len(users))
 		
 		if len(users) > 0 {
 			usersByInstance[instanceName] = users
-			log.Printf("DEBUG GetActiveUsersByInstance: Added %d users for instance '%s'", len(users), instanceName)
 		}
 	}
 
-	log.Printf("DEBUG GetActiveUsersByInstance: Returning %d instances with users", len(usersByInstance))
 	return usersByInstance
 }
 

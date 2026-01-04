@@ -337,8 +337,6 @@ func (c *KiwiClient) handleMSG(body string) {
 
 // parseUserCallback parses the user_cb JSON data containing active users
 func (c *KiwiClient) parseUserCallback(data string) {
-	log.Printf("DEBUG: Received user_cb data (length=%d): %s", len(data), data)
-	
 	// Parse JSON array directly - Go's json.Unmarshal handles URL-encoded strings automatically
 	var users []KiwiUser
 	if err := json.Unmarshal([]byte(data), &users); err != nil {
@@ -346,25 +344,15 @@ func (c *KiwiClient) parseUserCallback(data string) {
 		return
 	}
 
-	log.Printf("DEBUG: Parsed %d users from JSON", len(users))
-
 	// Filter out empty slots (users with only index field)
 	// A slot is active if it has a frequency (f field) set
 	activeUsers := make([]KiwiUser, 0)
-	for i, user := range users {
-		log.Printf("DEBUG: User %d - Index=%d, Name=%s, Freq=%d, Mode=%s",
-			i, user.Index, user.Name, user.Frequency, user.Mode)
-		
+	for _, user := range users {
 		// Check if user has meaningful data - frequency > 0 means active connection
 		if user.Frequency > 0 {
 			activeUsers = append(activeUsers, user)
-			log.Printf("DEBUG: User %d ACCEPTED (freq=%d > 0)", i, user.Frequency)
-		} else {
-			log.Printf("DEBUG: User %d REJECTED (freq=%d <= 0)", i, user.Frequency)
 		}
 	}
-
-	log.Printf("DEBUG: Filtered to %d active users (from %d total)", len(activeUsers), len(users))
 
 	// Store active users
 	c.usersMu.Lock()
