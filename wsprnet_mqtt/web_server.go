@@ -4400,11 +4400,11 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
             html += '<div style="display: flex; align-items: center; gap: 20px; margin-top: 8px; font-size: 0.85em;">';
             html += '<div style="width: 80px; flex-shrink: 0;"></div>';
             html += '<div style="display: flex; gap: 15px;">';
-            html += '<div style="display: flex; align-items: center; gap: 6px;">';
+            html += '<div class="timeline-legend-item" data-type="spots" style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; padding: 4px 8px; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background=\'#1e293b\'" onmouseout="this.style.background=\'transparent\'" onclick="toggleTimelineData(this, \'spots\')">';
             html += '<div style="width: 16px; height: 16px; background: #10b981; border-radius: 3px;"></div>';
             html += '<span style="color: #94a3b8;">Spots Received</span>';
             html += '</div>';
-            html += '<div style="display: flex; align-items: center; gap: 6px;">';
+            html += '<div class="timeline-legend-item" data-type="gaps" style="display: flex; align-items: center; gap: 6px; cursor: pointer; user-select: none; padding: 4px 8px; border-radius: 4px; transition: background 0.2s;" onmouseover="this.style.background=\'#1e293b\'" onmouseout="this.style.background=\'transparent\'" onclick="toggleTimelineData(this, \'gaps\')">';
             html += '<div style="width: 16px; height: 16px; background: #ef4444; border-radius: 3px;"></div>';
             html += '<span style="color: #94a3b8;">Missing Cycles</span>';
             html += '</div>';
@@ -4422,6 +4422,44 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     });
                 });
             }, 100);
+        }
+
+        // Toggle timeline data visibility (spots or gaps)
+        function toggleTimelineData(element, type) {
+            const container = element.closest('.gap-timeline').parentElement;
+            const timelineDiv = container.querySelector('.gap-timeline');
+            const allBars = timelineDiv.querySelectorAll('[style*="flex: 1"]');
+            
+            // Toggle active state
+            element.classList.toggle('timeline-hidden');
+            
+            // Update visual state
+            if (element.classList.contains('timeline-hidden')) {
+                element.style.opacity = '0.3';
+                element.style.textDecoration = 'line-through';
+            } else {
+                element.style.opacity = '1';
+                element.style.textDecoration = 'none';
+            }
+            
+            // Get current visibility states
+            const legendItems = container.querySelectorAll('.timeline-legend-item');
+            const spotsHidden = Array.from(legendItems).find(item => item.dataset.type === 'spots')?.classList.contains('timeline-hidden');
+            const gapsHidden = Array.from(legendItems).find(item => item.dataset.type === 'gaps')?.classList.contains('timeline-hidden');
+            
+            // Update bar visibility
+            allBars.forEach(bar => {
+                const isGap = bar.style.background.includes('#ef4444') || bar.style.background.includes('rgb(239, 68, 68)');
+                const isSpot = bar.style.background.includes('#10b981') || bar.style.background.includes('rgb(16, 185, 129)');
+                
+                if ((isGap && gapsHidden) || (isSpot && spotsHidden)) {
+                    bar.style.opacity = '0';
+                    bar.style.visibility = 'hidden';
+                } else {
+                    bar.style.opacity = '1';
+                    bar.style.visibility = 'visible';
+                }
+            });
         }
 
         function initGapsTab() {
