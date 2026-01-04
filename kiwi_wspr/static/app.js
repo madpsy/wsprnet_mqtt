@@ -1047,7 +1047,8 @@ async function updateUsersModalContent(instanceName) {
                 }
 
                 const location = decodeURIComponent(user.g || 'Unknown location');
-                const freqKHz = (user.f / 1000).toFixed(5);
+                // user.f is already in kHz from the KiwiSDR API
+                const freqKHz = user.f.toFixed(1);
                 const mode = user.m || 'N/A';
                 const time = user.t || 'N/A';
                 const ackTime = user.rs || 'N/A';
