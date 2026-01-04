@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 )
@@ -10,7 +11,7 @@ import (
 // CoordinatorManager manages WSPR coordinators and handles dynamic reconfiguration
 type CoordinatorManager struct {
 	appConfig        *AppConfig
-	coordinators     map[string]*WSPRCoordinator // key is band name
+	coordinators     map[string]*WSPRCoordinator // key is "instance/band"
 	mqttPublisher    *MQTTPublisher
 	oneShot          bool
 	oneShotDone      chan struct{}
@@ -102,9 +103,12 @@ func (cm *CoordinatorManager) StartAll() error {
 
 // startCoordinator starts a coordinator for a specific band (must be called with lock held)
 func (cm *CoordinatorManager) startCoordinator(band WSPRBand) error {
+	// Use composite key: instance/band
+	key := fmt.Sprintf("%s/%s", band.Instance, band.Name)
+	
 	// Check if already running
-	if _, exists := cm.coordinators[band.Name]; exists {
-		return fmt.Errorf("coordinator for %s is already running", band.Name)
+	if _, exists := cm.coordinators[key]; exists {
+		return fmt.Errorf("coordinator for %s on %s is already running", band.Name, band.Instance)
 	}
 
 	instance := cm.appConfig.GetInstance(band.Instance)
@@ -162,7 +166,8 @@ func (cm *CoordinatorManager) startCoordinator(band WSPRBand) error {
 		return fmt.Errorf("failed to start coordinator: %w", err)
 	}
 
-	cm.coordinators[band.Name] = coordinator
+	// Use composite key: instance/band
+	cm.coordinators[key] = coordinator
 	log.Printf("CoordinatorManager: Started coordinator for %s (%.1f kHz on %s)", band.Name, band.Frequency, instance.Name)
 
 	return nil
@@ -175,9 +180,9 @@ func (cm *CoordinatorManager) StopAll() {
 
 	log.Println("CoordinatorManager: Stopping all coordinators...")
 
-	for name, coord := range cm.coordinators {
+	for key, coord := range cm.coordinators {
 		coord.Stop()
-		log.Printf("CoordinatorManager: Stopped coordinator for %s", name)
+		log.Printf("CoordinatorManager: Stopped coordinator %s", key)
 	}
 
 	cm.coordinators = make(map[string]*WSPRCoordinator)
@@ -248,13 +253,14 @@ func (cm *CoordinatorManager) Reload(newConfig *AppConfig) error {
 	// Stop coordinators for bands that are no longer enabled or have changed
 	for name, oldBand := range oldBands {
 		newBand, stillEnabled := newBands[name]
+		oldKey := fmt.Sprintf("%s/%s", oldBand.Instance, oldBand.Name)
 
 		// Stop if disabled or configuration changed
 		if !stillEnabled || cm.bandConfigChanged(oldBand, newBand) {
-			if coord, exists := cm.coordinators[name]; exists {
-				log.Printf("CoordinatorManager: Stopping coordinator for %s (disabled or config changed)", name)
+			if coord, exists := cm.coordinators[oldKey]; exists {
+				log.Printf("CoordinatorManager: Stopping coordinator for %s on %s (disabled or config changed)", name, oldBand.Instance)
 				coord.Stop()
-				delete(cm.coordinators, name)
+				delete(cm.coordinators, oldKey)
 			}
 		}
 	}
@@ -407,23 +413,17 @@ func (cm *CoordinatorManager) GetActiveUsersByInstance() map[string][]KiwiUser {
 	queriedInstances := make(map[string]bool)
 
 	// Iterate through all coordinators and get their active users
-	for coordName, coord := range cm.coordinators {
-		log.Printf("DEBUG GetActiveUsersByInstance: Processing coordinator %s", coordName)
+	for coordKey, coord := range cm.coordinators {
+		log.Printf("DEBUG GetActiveUsersByInstance: Processing coordinator %s", coordKey)
 		
-		// Get the band config to find the instance name
-		var instanceName string
-		for _, band := range cm.appConfig.WSPRBands {
-			if coord.GetDisplayName() == band.Name {
-				instanceName = band.Instance
-				log.Printf("DEBUG GetActiveUsersByInstance: Found instance name '%s' for band '%s'", instanceName, band.Name)
-				break
-			}
-		}
-
-		if instanceName == "" {
-			log.Printf("DEBUG GetActiveUsersByInstance: No instance name found for coordinator %s (display name: %s)", coordName, coord.GetDisplayName())
+		// Extract instance name from key (format: "instance/band")
+		parts := strings.SplitN(coordKey, "/", 2)
+		if len(parts) != 2 {
+			log.Printf("DEBUG GetActiveUsersByInstance: Invalid coordinator key format: %s", coordKey)
 			continue
 		}
+		instanceName := parts[0]
+		log.Printf("DEBUG GetActiveUsersByInstance: Extracted instance name '%s' from key '%s'", instanceName, coordKey)
 
 		// Skip if we've already queried this instance
 		if queriedInstances[instanceName] {
@@ -452,8 +452,9 @@ func (cm *CoordinatorManager) GetUserToBandMapping() map[string]string {
 	defer cm.mu.RUnlock()
 
 	mapping := make(map[string]string)
-	for _, coord := range cm.coordinators {
-		mapping[coord.GetGeneratedUser()] = coord.GetDisplayName()
+	for coordKey, coord := range cm.coordinators {
+		// Use the full key (instance/band) for clarity
+		mapping[coord.GetGeneratedUser()] = coordKey
 	}
 	return mapping
 }
