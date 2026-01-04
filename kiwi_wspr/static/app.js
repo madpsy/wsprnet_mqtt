@@ -89,60 +89,62 @@ function updateMQTTStatus() {
 function updateBandStatuses() {
     if (!statusData || !statusData.bands) return;
     
-    // Create a map of band statuses by name
+    // Create a map of band statuses by instance+name to handle duplicate band names
     const bandStatusMap = {};
     statusData.bands.forEach(band => {
-        bandStatusMap[band.name] = band;
+        const key = `${band.instance}/${band.name}`;
+        bandStatusMap[key] = band;
     });
     
     // Update each band's status indicator in the UI
-    config.WSPRBands?.forEach((band, idx) => {
-        const bandStatus = bandStatusMap[band.Name];
+    document.querySelectorAll('.item[data-band-name]').forEach(bandEl => {
+        const bandName = bandEl.getAttribute('data-band-name');
+        const instanceName = bandEl.getAttribute('data-instance-name');
+        
+        // Use composite key to look up the correct band status
+        const key = `${instanceName}/${bandName}`;
+        const bandStatus = bandStatusMap[key];
         if (!bandStatus) return;
         
-        // Find the band element and update its status
-        const bandElements = document.querySelectorAll('.item');
-        bandElements.forEach(el => {
-            const bandNameEl = el.querySelector('strong');
-            if (bandNameEl && bandNameEl.textContent.includes(band.Name)) {
-                // Remove existing status indicator if present
-                let statusIndicator = el.querySelector('.connection-status');
-                if (!statusIndicator) {
-                    statusIndicator = document.createElement('span');
-                    statusIndicator.className = 'connection-status';
-                    statusIndicator.style.marginLeft = '10px';
-                    bandNameEl.parentNode.insertBefore(statusIndicator, bandNameEl.nextSibling);
-                }
-                
-                // Update status indicator based on state
-                const state = bandStatus.state || 'disabled';
-                
-                if (state === 'connected') {
-                    // Green dot - successfully receiving SND data
-                    const decodeInfo = bandStatus.last_decode_time
-                        ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
-                        : ' (waiting for decode)';
-                    statusIndicator.innerHTML = `<span style="color: #28a745; font-size: 16px;">●</span>${decodeInfo}`;
-                } else if (state === 'waiting') {
-                    // Orange dot - coordinator started, waiting for first recording
-                    statusIndicator.innerHTML = '<span style="color: #ff8c00; font-size: 16px;">●</span> (waiting)';
-                } else if (state === 'disconnected') {
-                    // Grey dot - was connected but not receiving data now
-                    const decodeInfo = bandStatus.last_decode_time
-                        ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
-                        : '';
-                    statusIndicator.innerHTML = `<span style="color: #6c757d; font-size: 16px;">●</span> (disconnected${decodeInfo})`;
-                } else if (state === 'failed') {
-                    // Red dot - recording failed
-                    const errorMsg = bandStatus.error ? ` - ${bandStatus.error}` : '';
-                    const errorTitle = bandStatus.error ? ` title="${bandStatus.error}"` : '';
-                    statusIndicator.innerHTML = `<span style="color: #dc3545; font-size: 16px;"${errorTitle}>●</span> (failed${errorMsg})`;
-                } else {
-                    // No indicator for disabled bands
-                    statusIndicator.innerHTML = '';
-                }
+        // Find or create status indicator
+        let statusIndicator = bandEl.querySelector('.connection-status');
+        if (!statusIndicator) {
+            statusIndicator = document.createElement('span');
+            statusIndicator.className = 'connection-status';
+            statusIndicator.style.marginLeft = '10px';
+            const bandNameEl = bandEl.querySelector('strong');
+            if (bandNameEl) {
+                bandNameEl.parentNode.insertBefore(statusIndicator, bandNameEl.nextSibling);
             }
-        });
+        }
+        
+        // Update status indicator based on state
+        const state = bandStatus.state || 'disabled';
+        
+        if (state === 'connected') {
+            // Green dot - successfully receiving SND data
+            const decodeInfo = bandStatus.last_decode_time
+                ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
+                : ' (waiting for decode)';
+            statusIndicator.innerHTML = `<span style="color: #28a745; font-size: 16px;">●</span>${decodeInfo}`;
+        } else if (state === 'waiting') {
+            // Orange dot - coordinator started, waiting for first recording
+            statusIndicator.innerHTML = '<span style="color: #ff8c00; font-size: 16px;">●</span> (waiting)';
+        } else if (state === 'disconnected') {
+            // Grey dot - was connected but not receiving data now
+            const decodeInfo = bandStatus.last_decode_time
+                ? ` (${bandStatus.last_decode_count} spots, ${formatTimeAgo(bandStatus.last_decode_time)})`
+                : '';
+            statusIndicator.innerHTML = `<span style="color: #6c757d; font-size: 16px;">●</span> (disconnected${decodeInfo})`;
+        } else if (state === 'failed') {
+            // Red dot - recording failed
+            const errorMsg = bandStatus.error ? ` - ${bandStatus.error}` : '';
+            const errorTitle = bandStatus.error ? ` title="${bandStatus.error}"` : '';
+            statusIndicator.innerHTML = `<span style="color: #dc3545; font-size: 16px;"${errorTitle}>●</span> (failed${errorMsg})`;
+        } else {
+            // No indicator for disabled bands
+            statusIndicator.innerHTML = '';
+        }
     });
 }
 
