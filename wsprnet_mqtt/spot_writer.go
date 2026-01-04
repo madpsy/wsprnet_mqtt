@@ -481,6 +481,10 @@ func (sw *SpotWriter) AnalyzeGaps(hoursBack int) map[string][]GapInfo {
 	startTime := endTime.Add(-time.Duration(hoursBack) * time.Hour)
 	startTime = time.Unix((startTime.Unix()/120)*120, 0)
 
+	// Add 4 minutes to startTime to exclude the first 2 cycles (oldest data)
+	// This prevents showing gaps for cycles at the edge of our 24-hour data retention
+	startTime = startTime.Add(4 * time.Minute)
+
 	// Generate all expected WSPR cycles in the time range
 	expectedCycles := make(map[int64]bool)
 	for t := startTime.Unix(); t <= endTime.Unix(); t += 120 {
