@@ -4292,6 +4292,7 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     const displayCycles = gap.missing_cycles.slice(0, maxDisplay);
                     const remaining = gap.missing_cycles.length - maxDisplay;
                     const displayName = gap.instance === 'deduped' ? '📤 Deduped (Sent to WSPRNet)' : ` + "`" + `🖥️ ${gap.instance}` + "`" + `;
+                    const gapDataId = ` + "`" + `gapdata_${gap.instance}_${band.replace(/[^a-zA-Z0-9]/g, '_')}` + "`" + `;
 
                     html += ` + "`" + `
                         <div style="background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 15px; border: 1px solid #334155;">
@@ -4306,8 +4307,8 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                                     <div style="color: #94a3b8; font-size: 0.85em;">Coverage Rate</div>
                                 </div>
                             </div>
-                            
-                            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-bottom: 15px;">
+
+                            <div style="display: grid; grid-template-columns: repeat(2, 1fr) auto; gap: 15px; margin-bottom: 15px; align-items: end;">
                                 <div>
                                     <div style="color: #94a3b8; font-size: 0.85em;">Missing Cycles</div>
                                     <div style="font-size: 1.3em; font-weight: bold; color: #ef4444;">${gap.gap_count}</div>
@@ -4316,7 +4317,11 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                                     <div style="color: #94a3b8; font-size: 0.85em;">Total Expected</div>
                                     <div style="font-size: 1.3em; font-weight: bold; color: #60a5fa;">${gap.total_cycles}</div>
                                 </div>
+                                <div>
+                                    <button class="control-btn" onclick="downloadGapCSV('${gap.instance}', '${band}', '${gapDataId}')" style="white-space: nowrap;">💾 Export CSV</button>
+                                </div>
                             </div>
+                            <div id="${gapDataId}" style="display: none;">${JSON.stringify(gap.missing_cycles)}</div>
 
                             <div style="background: #0f172a; padding: 15px; border-radius: 6px; border: 1px solid #334155;">
                                 <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 10px; font-weight: 600;">Coverage Timeline:</div>
@@ -4422,6 +4427,46 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     });
                 });
             }, 100);
+        }
+
+        // Download gap data as CSV
+        function downloadGapCSV(instance, band, dataId) {
+            const dataElement = document.getElementById(dataId);
+            if (!dataElement) {
+                console.error('Gap data not found');
+                return;
+            }
+
+            const missingCycles = JSON.parse(dataElement.textContent);
+            if (!missingCycles || missingCycles.length === 0) {
+                alert('No missing cycles to export');
+                return;
+            }
+
+            // Get current date for the time range
+            const timeFilter = parseInt(document.getElementById('gapsTimeFilter').value);
+            const endTime = new Date(Date.now() - (4 * 60 * 1000)); // Subtract 4 minutes (matches backend)
+            const startTime = new Date(endTime.getTime() - (timeFilter * 60 * 60 * 1000));
+
+            // Create CSV content
+            let csv = 'Instance,Band,Missing Cycle Time,Date,Time Range\n';
+            const dateStr = new Date().toISOString().split('T')[0];
+            const timeRange = ` + "`" + `${startTime.toISOString()} to ${endTime.toISOString()}` + "`" + `;
+
+            missingCycles.forEach(cycle => {
+                // Parse the cycle time (format: "HH:MM")
+                const displayInstance = instance === 'deduped' ? 'Deduped (Sent to WSPRNet)' : instance;
+                csv += ` + "`" + `"${displayInstance}","${band}","${cycle}","${dateStr}","${timeRange}"\n` + "`" + `;
+            });
+
+            // Create and download the file
+            const blob = new Blob([csv], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = ` + "`" + `wspr_gaps_${instance}_${band}_${dateStr}.csv` + "`" + `;
+            a.click();
+            window.URL.revokeObjectURL(url);
         }
 
         // Toggle timeline data visibility (spots or gaps)
