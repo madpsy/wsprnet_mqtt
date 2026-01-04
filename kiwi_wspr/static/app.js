@@ -922,20 +922,24 @@ function updateInstanceHeaders() {
 function updateBandConnectionStatus() {
     if (!statusData || !statusData.bands) return;
 
-    // Create a map of band statuses by name
+    // Create a map of band statuses by instance+name to handle duplicate band names
     const bandStatusMap = {};
     statusData.bands.forEach(band => {
-        bandStatusMap[band.name] = band;
+        const key = `${band.instance}/${band.name}`;
+        bandStatusMap[key] = band;
     });
 
     // Update each band's connection status
     document.querySelectorAll('.item[data-band-name]').forEach(bandEl => {
         const bandName = bandEl.getAttribute('data-band-name');
+        const instanceName = bandEl.getAttribute('data-instance-name');
         const statusSpan = bandEl.querySelector('.band-connection-status');
 
         if (!statusSpan) return;
 
-        const bandStatus = bandStatusMap[bandName];
+        // Use composite key to look up the correct band status
+        const key = `${instanceName}/${bandName}`;
+        const bandStatus = bandStatusMap[key];
         if (!bandStatus) {
             statusSpan.innerHTML = '';
             return;
