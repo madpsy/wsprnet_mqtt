@@ -1020,15 +1020,16 @@ func (ws *WebServer) handleDashboard(w http.ResponseWriter, r *http.Request) {
                     </select>
                 </div>
             </div>
-            <div style="display: flex; gap: 10px; margin-bottom: 15px;">
-                <button class="control-btn" onclick="loadSpots()">🔄 Refresh</button>
-                <button class="control-btn" onclick="exportSpots()">💾 Export CSV</button>
-            </div>
             
             <!-- Band Filter Buttons -->
-            <div style="margin-top: 15px;">
+            <div style="margin-bottom: 15px;">
                 <div style="color: #94a3b8; font-size: 0.9em; margin-bottom: 8px; font-weight: 600;">Band Filter:</div>
                 <div id="spotBandButtons" style="display: flex; flex-wrap: wrap; gap: 8px;"></div>
+            </div>
+            
+            <div style="display: flex; gap: 10px;">
+                <button class="control-btn" onclick="loadSpots()">🔄 Refresh</button>
+                <button class="control-btn" onclick="exportSpots()">💾 Export CSV</button>
             </div>
         </div>
 
