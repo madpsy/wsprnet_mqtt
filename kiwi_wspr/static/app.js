@@ -989,7 +989,20 @@ async function updateUsersModalContent(instanceName) {
         const usersData = await response.json();
 
         // Get users for this instance
-        const users = usersData[instanceName] || [];
+        let users = usersData[instanceName] || [];
+
+        // Check if we should filter to only show decoders
+        const showDecodersCheckbox = document.getElementById('show-decoders-checkbox');
+        const showOnlyDecoders = showDecodersCheckbox ? showDecodersCheckbox.checked : true;
+
+        // Filter users if needed
+        let filteredUsers = users;
+        if (showOnlyDecoders) {
+            filteredUsers = users.filter(user => {
+                const rawName = decodeURIComponent(user.n || '');
+                return userToBandMapping[rawName] !== undefined;
+            });
+        }
 
         if (users.length === 0) {
             modalBody.innerHTML = `
@@ -1001,43 +1014,62 @@ async function updateUsersModalContent(instanceName) {
             return;
         }
 
-        // Build users display
+        // Build users display with filter checkbox
         let html = `<div class="user-instance">`;
-        html += `<h3>${instanceName} - ${users.length} Active User${users.length !== 1 ? 's' : ''}</h3>`;
+        html += `
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="margin: 0;">${instanceName} - ${filteredUsers.length} Active User${filteredUsers.length !== 1 ? 's' : ''}</h3>
+                <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 14px;">
+                    <input type="checkbox" id="show-decoders-checkbox" ${showOnlyDecoders ? 'checked' : ''}
+                           onchange="updateUsersModalContent('${instanceName}')"
+                           style="cursor: pointer;">
+                    <span>Show Decoders Only</span>
+                </label>
+            </div>
+        `;
 
-        users.forEach(user => {
-            // URL decode the name and location
-            let rawName = decodeURIComponent(user.n || '(no identity)');
-
-            // Check if this is a generated user ID and translate to band name
-            let displayName = rawName;
-            if (userToBandMapping[rawName]) {
-                displayName = `Decoder - ${userToBandMapping[rawName]}`;
-            }
-
-            const location = decodeURIComponent(user.g || 'Unknown location');
-            const freqKHz = (user.f / 1000).toFixed(1);
-            const mode = user.m || 'N/A';
-            const time = user.t || 'N/A';
-            const ackTime = user.rs || 'N/A';
-
+        if (filteredUsers.length === 0) {
             html += `
-                <div class="user-card">
-                    <div class="user-card-header">
-                        <div>
-                            <div class="user-name">${displayName}</div>
-                            <div class="user-location">📍 ${location}</div>
-                        </div>
-                    </div>
-                    <div class="user-details">
-                        <div class="user-detail"><strong>Frequency:</strong> ${freqKHz} kHz</div>
-                        <div class="user-detail"><strong>Mode:</strong> ${mode.toUpperCase()}</div>
-                        <div class="user-detail"><strong>Connected:</strong> ${time}</div>
-                        <div class="user-detail"><strong>Ack:</strong> ${ackTime}</div>
-                    </div>
+                <div style="text-align: center; padding: 20px; color: #666;">
+                    <p>No decoder users found</p>
+                    <p style="font-size: 0.9em; margin-top: 10px;">Uncheck "Show Decoders Only" to see all users.</p>
                 </div>
             `;
-        });
+        } else {
+            filteredUsers.forEach(user => {
+                // URL decode the name and location
+                let rawName = decodeURIComponent(user.n || '(no identity)');
+
+                // Check if this is a generated user ID and translate to band name
+                let displayName = rawName;
+                if (userToBandMapping[rawName]) {
+                    displayName = `Decoder - ${userToBandMapping[rawName]}`;
+                }
+
+                const location = decodeURIComponent(user.g || 'Unknown location');
+                const freqKHz = (user.f / 1000).toFixed(1);
+                const mode = user.m || 'N/A';
+                const time = user.t || 'N/A';
+                const ackTime = user.rs || 'N/A';
+
+                html += `
+                    <div class="user-card">
+                        <div class="user-card-header">
+                            <div>
+                                <div class="user-name">${displayName}</div>
+                                <div class="user-location">📍 ${location}</div>
+                            </div>
+                        </div>
+                        <div class="user-details">
+                            <div class="user-detail"><strong>Frequency:</strong> ${freqKHz} kHz</div>
+                            <div class="user-detail"><strong>Mode:</strong> ${mode.toUpperCase()}</div>
+                            <div class="user-detail"><strong>Connected:</strong> ${time}</div>
+                            <div class="user-detail"><strong>Ack:</strong> ${ackTime}</div>
+                        </div>
+                    </div>
+                `;
+            });
+        }
 
         html += `</div>`;
         modalBody.innerHTML = html;
