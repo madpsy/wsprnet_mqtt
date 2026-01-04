@@ -1047,7 +1047,7 @@ async function updateUsersModalContent(instanceName) {
                 }
 
                 const location = decodeURIComponent(user.g || 'Unknown location');
-                const freqKHz = (user.f / 1000).toFixed(1);
+                const freqKHz = (user.f / 1000).toFixed(5);
                 const mode = user.m || 'N/A';
                 const time = user.t || 'N/A';
                 const ackTime = user.rs || 'N/A';
