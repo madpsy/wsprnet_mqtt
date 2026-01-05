@@ -363,11 +363,89 @@ func (wc *WSPRCoordinator) recordCycle(cycleStart time.Time, duration time.Durat
 
 	// Wait for sample rate to be received (up to 5 seconds)
 	// In persistent mode, sample rate should already be known, but check anyway
+	sampleRateReceived := false
 	for i := 0; i < 50; i++ {
 		if client.IsSampleRateReady() {
+			sampleRateReceived = true
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
+	}
+
+	// If sample rate not received, trigger reconnect
+	if !sampleRateReceived {
+		log.Printf("WSPR Coordinator: Sample rate not received, triggering reconnect...")
+
+		// Increment reconnection counter
+		wc.mu.Lock()
+		wc.reconnectCount++
+		reconnectNum := wc.reconnectCount
+		wc.mu.Unlock()
+
+		log.Printf("WSPR Coordinator: Reconnection #%d for %s (sample rate timeout)", reconnectNum, wc.displayName)
+
+		// Close current client connection
+		if wc.client != nil {
+			wc.client.Close()
+		}
+
+		// Create new client with same config (no duration limit)
+		recordConfig := *wc.config
+		recordConfig.Duration = 0 // No timeout - keep connection alive
+		recordConfig.Filename = baseFilename
+		recordConfig.OutputDir = wc.workDir
+
+		newClient, err := NewKiwiClient(&recordConfig)
+		if err != nil {
+			log.Printf("WSPR Coordinator: Reconnect failed: %v", err)
+			wc.mu.Lock()
+			wc.recordingState = RecordingStateFailed
+			wc.lastError = fmt.Sprintf("Reconnect failed: %v", err)
+			wc.mu.Unlock()
+			return "", fmt.Errorf("reconnect failed: %w", err)
+		}
+
+		wc.mu.Lock()
+		wc.client = newClient
+		wc.mu.Unlock()
+
+		// Start new client
+		go func() {
+			if err := newClient.Run(); err != nil {
+				log.Printf("WSPR Coordinator: Client error after reconnect: %v", err)
+				wc.mu.Lock()
+				wc.recordingState = RecordingStateFailed
+				wc.lastError = fmt.Sprintf("Client connection error: %v", err)
+				wc.mu.Unlock()
+			}
+		}()
+
+		// Wait for connection to establish and sample rate to be received
+		log.Printf("WSPR Coordinator: Waiting for reconnection to establish...")
+		time.Sleep(2 * time.Second)
+
+		// Wait for sample rate to be received (up to 10 seconds)
+		sampleRateReceived = false
+		for i := 0; i < 100; i++ {
+			if newClient.IsSampleRateReady() {
+				sampleRateReceived = true
+				log.Printf("WSPR Coordinator: Sample rate received after reconnect")
+				break
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+
+		if !sampleRateReceived {
+			log.Printf("WSPR Coordinator: Sample rate not received after reconnect")
+			wc.mu.Lock()
+			wc.recordingState = RecordingStateFailed
+			wc.lastError = "Sample rate not received after reconnect"
+			wc.mu.Unlock()
+			return "", fmt.Errorf("sample rate not received after reconnect")
+		}
+
+		// Update client reference for the rest of the function
+		client = newClient
 	}
 
 	// Start new WAV file on existing connection
