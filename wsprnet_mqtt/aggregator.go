@@ -29,6 +29,12 @@ type SpotAggregator struct {
 	duplicates   map[int64]map[string][]*WSPRReportWithSource
 	duplicatesMu sync.Mutex
 
+	// Track submitted spots to prevent re-submission across flush cycles
+	// Key: callsign_band_windowKey (e.g., "GM0PXV_20m_1737187200")
+	// Value: window timestamp (for cleanup)
+	submittedSpots   map[string]int64
+	submittedSpotsMu sync.Mutex
+
 	// Channel for incoming spots
 	spotChan chan *WSPRReportWithSource
 
@@ -56,6 +62,7 @@ func NewSpotAggregator(wsprNet *WSPRNet, pskReporter *PSKReporter, stats *Statis
 		spotWriter:      spotWriter,
 		windows:         make(map[int64]map[string]*WSPRReportWithSource),
 		duplicates:      make(map[int64]map[string][]*WSPRReportWithSource),
+		submittedSpots:  make(map[string]int64),
 		spotChan:        make(chan *WSPRReportWithSource, 1000),
 		stopChan:        make(chan struct{}),
 	}
@@ -427,6 +434,22 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 		})
 
 		for _, report := range reports {
+			// Create submission key: callsign_band_windowKey
+			submissionKey := fmt.Sprintf("%s_%s_%d", report.Callsign, band, windowKey)
+
+			// Check if we've already submitted this spot
+			sa.submittedSpotsMu.Lock()
+			_, alreadySubmitted := sa.submittedSpots[submissionKey]
+			if alreadySubmitted {
+				sa.submittedSpotsMu.Unlock()
+				log.Printf("WARNING: Skipping duplicate submission for %s on %s (window %s) - already submitted",
+					report.Callsign, band, windowTime.Format("15:04 UTC"))
+				continue
+			}
+			// Mark as submitted
+			sa.submittedSpots[submissionKey] = windowKey
+			sa.submittedSpotsMu.Unlock()
+
 			// Submit to WSPRNet
 			err := sa.wsprNet.Submit(report.WSPRReport)
 			submitted := (err == nil)
@@ -451,6 +474,9 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 			}
 		}
 	}
+
+	// Clean up old submitted spots (keep last 10 windows = 20 minutes)
+	sa.cleanupSubmittedSpots(windowKey)
 
 	// Finish statistics window (pass 0 for failed count since failures are tracked separately by WSPRNet)
 	sa.stats.FinishWindow(len(spots), totalDuplicates, 0, bandBreakdown)
@@ -483,6 +509,32 @@ func (sa *SpotAggregator) trackDuplicate(windowKey int64, rejected *WSPRReportWi
 		sa.duplicates[windowKey][rejected.Callsign],
 		rejected,
 	)
+}
+
+// cleanupSubmittedSpots removes submitted spot entries older than 10 windows (20 minutes)
+// This prevents memory leaks while ensuring we catch duplicates across flush cycles
+func (sa *SpotAggregator) cleanupSubmittedSpots(currentWindowKey int64) {
+	sa.submittedSpotsMu.Lock()
+	defer sa.submittedSpotsMu.Unlock()
+
+	// Keep spots from last 10 windows (20 minutes)
+	// This is more than enough to catch late-arriving duplicates
+	cutoffWindow := currentWindowKey - (10 * 120) // 10 windows * 120 seconds
+
+	keysToDelete := make([]string, 0)
+	for key, windowKey := range sa.submittedSpots {
+		if windowKey < cutoffWindow {
+			keysToDelete = append(keysToDelete, key)
+		}
+	}
+
+	for _, key := range keysToDelete {
+		delete(sa.submittedSpots, key)
+	}
+
+	if len(keysToDelete) > 0 && DebugMode {
+		log.Printf("Aggregator: Cleaned up %d old submitted spot entries", len(keysToDelete))
+	}
 }
 
 // frequencyToBand converts a frequency in Hz to a band name
