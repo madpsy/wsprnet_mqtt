@@ -172,6 +172,7 @@ func (w *WSPRNet) workerThread() {
 		w.retryMutex.Unlock()
 
 		// If no retry batch, try to build a new batch from main queue
+		// IMPORTANT: Only batch spots from the same 2-minute WSPR window
 		if !haveBatch {
 			w.queueMutex.Lock()
 			if len(w.reportQueue) > 0 {
@@ -180,16 +181,26 @@ func (w *WSPRNet) workerThread() {
 				time.Sleep(WSPRBatchWaitMillis * time.Millisecond)
 				w.queueMutex.Lock()
 
-				// Collect up to WSPRMaxBatchSize reports
-				batchSize := len(w.reportQueue)
-				if batchSize > WSPRMaxBatchSize {
-					batchSize = WSPRMaxBatchSize
+				// Get the window timestamp of the first spot (rounded to 2-minute boundary)
+				firstSpot := w.reportQueue[0]
+				firstWindow := (firstSpot.EpochTime.Unix() / 120) * 120
+
+				// Collect all spots from the same window (up to WSPRMaxBatchSize)
+				var windowReports []WSPRReport
+				var remainingReports []WSPRReport
+
+				for _, report := range w.reportQueue {
+					reportWindow := (report.EpochTime.Unix() / 120) * 120
+					if reportWindow == firstWindow && len(windowReports) < WSPRMaxBatchSize {
+						windowReports = append(windowReports, report)
+					} else {
+						remainingReports = append(remainingReports, report)
+					}
 				}
 
-				if batchSize > 0 {
-					batch.Reports = make([]WSPRReport, batchSize)
-					copy(batch.Reports, w.reportQueue[:batchSize])
-					w.reportQueue = w.reportQueue[batchSize:]
+				if len(windowReports) > 0 {
+					batch.Reports = windowReports
+					w.reportQueue = remainingReports
 					haveBatch = true
 				}
 			}
