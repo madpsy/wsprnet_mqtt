@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"sort"
 	"sync"
 	"time"
@@ -218,8 +219,15 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 
 // flushWindows periodically flushes old windows
 // Synchronized to run at WSPR cycle boundaries (every 2 minutes at :00, :02, :04, etc.)
+// with a random 3-20 second offset to spread load on wsprnet.org
 func (sa *SpotAggregator) flushWindows() {
 	defer sa.wg.Done()
+
+	// Seed random number generator
+	rand.Seed(time.Now().UnixNano())
+
+	// Generate random offset between 3-20 seconds
+	randomOffset := 3 + rand.Intn(18) // 3 + [0-17] = 3-20 seconds
 
 	// Calculate time until next 2-minute boundary
 	now := time.Now()
@@ -240,9 +248,12 @@ func (sa *SpotAggregator) flushWindows() {
 		secondsUntilNext = 60 - secondsIntoMinute // Wait until next even minute
 	}
 
-	log.Printf("Aggregator: Synchronizing to WSPR cycles, next flush in %d seconds", secondsUntilNext)
+	// Add random offset
+	secondsUntilNext += randomOffset
 
-	// Wait until the next 2-minute boundary
+	log.Printf("Aggregator: Synchronizing to WSPR cycles with %d second offset, next flush in %d seconds", randomOffset, secondsUntilNext)
+
+	// Wait until the next 2-minute boundary + offset
 	time.Sleep(time.Duration(secondsUntilNext) * time.Second)
 
 	// Now create a ticker that fires every 2 minutes (120 seconds)
