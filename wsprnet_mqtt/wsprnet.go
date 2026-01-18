@@ -21,7 +21,7 @@ const (
 	WSPRMaxQueueSize    = 10000
 	WSPRMaxRetries      = 3
 	WSPRWorkerThreads   = 1   // Reduced to 1 for MEPT bulk uploads
-	WSPRTimeoutSeconds  = 120 // Increased to handle slow WSPRnet responses
+	WSPRTimeoutSeconds  = 300 // 5 minute timeout to handle slow WSPRnet responses
 	WSPRMaxBatchSize    = 999 // Maximum spots per MEPT upload
 	WSPRBatchWaitMillis = 500 // Wait time to accumulate spots for batching
 )
