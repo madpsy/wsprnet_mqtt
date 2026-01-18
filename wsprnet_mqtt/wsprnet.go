@@ -298,12 +298,8 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 		return 0, spotsOffered, false
 	}
 
-	// Add grid field - must be exactly 4 characters
-	receiverGrid := w.receiverLocator
-	if len(receiverGrid) > 4 {
-		receiverGrid = receiverGrid[:4]
-	}
-	if err := writer.WriteField("grid", receiverGrid); err != nil {
+	// Add grid field (can be 4 or 6 characters)
+	if err := writer.WriteField("grid", w.receiverLocator); err != nil {
 		log.Printf("WSPRNet: Failed to write grid field: %v", err)
 		return 0, spotsOffered, false
 	}
@@ -408,8 +404,8 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 }
 
 // buildMEPTData builds the MEPT format data for bulk upload
-// Format: YYMMDD HHMM SNR DT FREQ CALL GRID PWR (8 fields, space-separated)
-// This is the exact format that wsprnet.org/meptspots.php expects
+// Format: YYMMDD HHMM Sync SNR DT FREQ CALL GRID PWR Drift DecCycles Jitter BlocksCorrected AudioPeak Decode (14 fields)
+// This matches the WSJT-X ALL_WSPR.TXT format
 func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 	var lines []string
 
@@ -418,8 +414,8 @@ func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 		date := tm.Format("060102")
 		timeStr := tm.Format("1504")
 
-		// Frequency must be in Hz (integer), not MHz
-		freqHz := report.Frequency
+		// Frequency in MHz with 7 decimal places
+		freqMHz := fmt.Sprintf("%.7f", float64(report.Frequency)/1000000.0)
 
 		// Grid must be exactly 4 characters (truncate 6-char grids)
 		grid := report.Locator
@@ -427,17 +423,28 @@ func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 			grid = grid[:4]
 		}
 
-		// MEPT format: YYMMDD HHMM SNR DT FREQ CALL GRID PWR
-		// Example: 240118 1234 -22 0.3 14097100 K1ABC FN31 37
-		line := fmt.Sprintf("%s %s %d %.1f %d %s %s %d",
+		// Fix DT to avoid -0.0 (round very small negative values to 0.0)
+		dt := report.DT
+		if dt > -0.05 && dt < 0.0 {
+			dt = 0.0
+		}
+
+		// WSJT-X ALL_WSPR.TXT format (14 fields):
+		// Date Time Sync SNR DT Freq Call Grid Power Drift DecCycles Jitter BlocksCorrected AudioPeak Decode
+		// Example: 170711 2234   1 -28  1.26  14.0970558  VE7XT CN88 20           0   190    0
+		line := fmt.Sprintf("%s %s %3d %3d %5.2f %12s  %s %s %2d %11d %5d %4d",
 			date,            // Date (YYMMDD)
 			timeStr,         // Time (HHMM)
+			1,               // Sync quality (placeholder)
 			report.SNR,      // SNR in dB
-			report.DT,       // DT (time offset in seconds)
-			freqHz,          // Frequency in Hz (not MHz!)
+			dt,              // DT (time offset in seconds)
+			freqMHz,         // Frequency in MHz (7 decimals)
 			report.Callsign, // Transmitter callsign
-			grid,            // Transmitter grid (4 chars only)
-			report.DBm)      // Power in dBm
+			grid,            // Transmitter grid (4 chars)
+			report.DBm,      // Power in dBm
+			report.Drift,    // Drift in Hz/minute
+			0,               // DecCycles (placeholder)
+			0)               // Jitter (placeholder)
 		lines = append(lines, line)
 	}
 
