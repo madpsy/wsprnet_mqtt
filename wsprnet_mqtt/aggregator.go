@@ -267,13 +267,23 @@ func (sa *SpotAggregator) flushWindows() {
 // Retained messages are filtered by age check in addToWindow()
 func (sa *SpotAggregator) flushOldWindows() {
 	now := time.Now().Unix()
-	flushThreshold := now - 60 // 60 seconds ago
+	// Flush windows that are 2-4 minutes old (120-240 seconds)
+	// This ensures we only flush one window per cycle
+	flushThreshold := now - 120  // 2 minutes ago
+	tooOldThreshold := now - 240 // 4 minutes ago
 
 	sa.windowsMu.Lock()
 
 	windowsToFlush := make(map[int64]map[string]*WSPRReportWithSource)
 	for windowKey, spots := range sa.windows {
-		if windowKey < flushThreshold {
+		age := now - windowKey
+		// Flush windows that are 2-4 minutes old
+		if windowKey < flushThreshold && windowKey >= tooOldThreshold {
+			windowsToFlush[windowKey] = spots
+			delete(sa.windows, windowKey)
+		} else if windowKey < tooOldThreshold {
+			// Window is too old (>4 minutes), flush it anyway but log warning
+			log.Printf("WARNING: Window %d is %d seconds old, flushing late", windowKey, age)
 			windowsToFlush[windowKey] = spots
 			delete(sa.windows, windowKey)
 		}
