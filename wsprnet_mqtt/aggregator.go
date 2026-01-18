@@ -494,16 +494,7 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 			return reports[i].Callsign < reports[j].Callsign
 		})
 
-		log.Printf("\n--- %s (%d spots) ---", band, len(reports))
 		for _, report := range reports {
-			log.Printf("  %-10s  %6.3f MHz  SNR: %3d dB  Power: %2d dBm  Grid: %s  [%s]",
-				report.Callsign,
-				float64(report.Frequency)/1000000.0,
-				report.SNR,
-				report.DBm,
-				report.Locator,
-				report.InstanceName)
-
 			// Debug logging for 630m
 			if band == "630m" {
 				log.Printf("DEBUG [630m]: Submitting %s from %s to WSPRNet...", report.Callsign, report.InstanceName)

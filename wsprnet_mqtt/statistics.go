@@ -628,11 +628,8 @@ func (st *StatisticsTracker) recordSNRHistory(windowTime time.Time) {
 	defer st.snrHistoryMu.Unlock()
 
 	if len(st.currentWindowSNR) == 0 {
-		log.Printf("SNR History: No data to record for window %s", windowTime.Format("15:04:05"))
 		return
 	}
-
-	log.Printf("SNR History: Recording data for %d band/instance combinations", len(st.currentWindowSNR))
 
 	// Process each band_instance combination
 	for key, data := range st.currentWindowSNR {
@@ -679,14 +676,6 @@ func (st *StatisticsTracker) recordSNRHistory(windowTime time.Time) {
 		}
 
 		st.snrHistory[band][instance] = append(st.snrHistory[band][instance], point)
-
-		if data.distanceCount > 0 {
-			log.Printf("SNR History: %s/%s - Avg SNR: %.1f dB, Avg Dist: %.0f km (%d spots), Total points: %d",
-				band, instance, avgSNR, avgDistance, data.count, len(st.snrHistory[band][instance]))
-		} else {
-			log.Printf("SNR History: %s/%s - Avg SNR: %.1f dB (%d spots), Total points: %d",
-				band, instance, avgSNR, data.count, len(st.snrHistory[band][instance]))
-		}
 
 		// Keep only last 720 points (24 hours)
 		if len(st.snrHistory[band][instance]) > 720 {

@@ -255,11 +255,15 @@ func (w *WSPRNet) workerThread() {
 // Returns (spotsAccepted, spotsOffered, success)
 func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	spotsOffered := len(batch.Reports)
+	startTime := time.Now()
 
 	// If dry run mode, just return success (logging is done by aggregator)
 	if w.dryRun {
+		log.Printf("WSPRNet: [DRY RUN] Would upload batch of %d spots", spotsOffered)
 		return spotsOffered, spotsOffered, true
 	}
+
+	log.Printf("WSPRNet: Starting MEPT upload of %d spots to %s/meptspots.php", spotsOffered, WSPRServerHostname)
 
 	// Build MEPT format data
 	meptData := w.buildMEPTData(batch.Reports)
@@ -322,10 +326,12 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	req.Header.Set("Connection", "Keep-Alive")
 	req.Header.Set("Host", WSPRServerHostname)
 
-	// Send request
+	// Send request and measure time
 	resp, err := client.Do(req)
+	elapsed := time.Since(startTime)
+
 	if err != nil {
-		log.Printf("WSPRNet: Failed to send request: %v", err)
+		log.Printf("WSPRNet: Failed to send request after %.2f seconds: %v", elapsed.Seconds(), err)
 		return 0, spotsOffered, false
 	}
 	defer func() {
@@ -337,14 +343,14 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	// Read response body
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		log.Printf("WSPRNet: Failed to read response body: %v", err)
+		log.Printf("WSPRNet: Failed to read response body after %.2f seconds: %v", elapsed.Seconds(), err)
 		return 0, spotsOffered, false
 	}
 	bodyStr := string(bodyBytes)
 
 	// Check for upload limit reached
 	if strings.Contains(bodyStr, "Upload limit") && strings.Contains(bodyStr, "reached") {
-		log.Printf("WSPRNet: Upload limit reached, treating as success to avoid retrying")
+		log.Printf("WSPRNet: SUCCESS - Upload limit reached after %.2f seconds, treating as success to avoid retrying", elapsed.Seconds())
 		return spotsOffered, spotsOffered, true
 	}
 
@@ -361,18 +367,19 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 			if spotsInResponse != spotsOffered {
 				log.Printf("WSPRNet: Warning - response mentions %d spots but we offered %d", spotsInResponse, spotsOffered)
 			}
+			log.Printf("WSPRNet: SUCCESS - Uploaded %d of %d spots in %.2f seconds", spotsAccepted, spotsOffered, elapsed.Seconds())
 			return spotsAccepted, spotsOffered, true
 		}
 	}
 
 	// If we got a 200 response but couldn't parse the spot count, log it but treat as success
 	if resp.StatusCode == 200 {
-		log.Printf("WSPRNet: Got 200 response but couldn't parse spot count. Response: %s", bodyStr)
+		log.Printf("WSPRNet: SUCCESS (assumed) - Got 200 response in %.2f seconds but couldn't parse spot count. Response: %s", elapsed.Seconds(), bodyStr)
 		// Assume success to avoid duplicate retries
 		return spotsOffered, spotsOffered, true
 	}
 
-	log.Printf("WSPRNet: Unexpected response: %d %s, body: %s", resp.StatusCode, resp.Status, bodyStr)
+	log.Printf("WSPRNet: FAILED - Unexpected response after %.2f seconds: %d %s, body: %s", elapsed.Seconds(), resp.StatusCode, resp.Status, bodyStr)
 	return 0, spotsOffered, false
 }
 

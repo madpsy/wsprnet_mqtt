@@ -289,7 +289,6 @@ func (mc *MQTTClient) messageHandler(client mqtt.Client, msg mqtt.Message) {
 	}
 
 	if decode.Callsign == "" || decode.Locator == "" {
-		log.Printf("MQTT: Skipping decode without callsign or locator")
 		return
 	}
 
@@ -336,10 +335,6 @@ func (mc *MQTTClient) messageHandler(client mqtt.Client, msg mqtt.Message) {
 
 	// Add to aggregator for deduplication (with instance name and country for statistics)
 	mc.aggregator.AddSpot(&report, instanceName, decode.Country)
-
-	if mc.msgCount%100 == 0 {
-		log.Printf("MQTT: Processed %d messages", mc.msgCount)
-	}
 }
 
 // GetStatus returns the current MQTT client status
