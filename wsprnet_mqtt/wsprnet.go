@@ -264,9 +264,19 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	}
 
 	log.Printf("WSPRNet: Starting MEPT upload of %d spots to %s/meptspots.php", spotsOffered, WSPRServerHostname)
+	log.Printf("WSPRNet: Receiver: %s at %s", w.receiverCallsign, w.receiverLocator)
 
 	// Build MEPT format data
 	meptData := w.buildMEPTData(batch.Reports)
+
+	// Log first few spots for debugging
+	lines := strings.Split(meptData, "\n")
+	if len(lines) > 0 {
+		log.Printf("WSPRNet: First spot: %s", lines[0])
+		if len(lines) > 1 {
+			log.Printf("WSPRNet: Second spot: %s", lines[1])
+		}
+	}
 
 	// Create multipart form data
 	var requestBody bytes.Buffer
