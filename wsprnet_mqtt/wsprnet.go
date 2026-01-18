@@ -384,8 +384,8 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 }
 
 // buildMEPTData builds the MEPT format data for bulk upload
-// Format matches wsprd output: Date Time Sync_Quality SNR DT Freq Drift Call Grid Power Reporter Reporter_Grid km az
-// This is the 14-field format that wsprnet.org/meptspots.php expects
+// Format: YYMMDD HHMM SNR DT FREQ CALL GRID PWR (8 fields, space-separated)
+// This is the exact format that wsprnet.org/meptspots.php expects
 func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 	var lines []string
 
@@ -393,26 +393,27 @@ func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 		tm := report.EpochTime.UTC()
 		date := tm.Format("060102")
 		timeStr := tm.Format("1504")
-		freq := fmt.Sprintf("%.6f", float64(report.Frequency)/1000000.0)
 
-		// MEPT format requires 14 fields in this exact order:
-		// Date Time Sync_Quality SNR DT Freq Drift Call Grid Power Reporter Reporter_Grid km az
-		// We don't have sync_quality, km, or az, so use placeholder values
-		line := fmt.Sprintf("%s %s %d %d %.1f %s %d %s %s %d %s %s %d %d",
-			date,               // Date (YYMMDD)
-			timeStr,            // Time (HHMM)
-			1,                  // Sync_Quality (placeholder, typically 1)
-			report.SNR,         // SNR
-			report.DT,          // DT (time offset)
-			freq,               // Frequency in MHz
-			report.Drift,       // Drift in Hz/minute
-			report.Callsign,    // Transmitter callsign
-			report.Locator,     // Transmitter grid
-			report.DBm,         // Power in dBm
-			w.receiverCallsign, // Reporter (receiver) callsign
-			w.receiverLocator,  // Reporter (receiver) grid
-			0,                  // Distance in km (placeholder, server calculates)
-			0)                  // Azimuth in degrees (placeholder, server calculates)
+		// Frequency must be in Hz (integer), not MHz
+		freqHz := report.Frequency
+
+		// Grid must be exactly 4 characters (truncate 6-char grids)
+		grid := report.Locator
+		if len(grid) > 4 {
+			grid = grid[:4]
+		}
+
+		// MEPT format: YYMMDD HHMM SNR DT FREQ CALL GRID PWR
+		// Example: 240118 1234 -22 0.3 14097100 K1ABC FN31 37
+		line := fmt.Sprintf("%s %s %d %.1f %d %s %s %d",
+			date,            // Date (YYMMDD)
+			timeStr,         // Time (HHMM)
+			report.SNR,      // SNR in dB
+			report.DT,       // DT (time offset in seconds)
+			freqHz,          // Frequency in Hz (not MHz!)
+			report.Callsign, // Transmitter callsign
+			grid,            // Transmitter grid (4 chars only)
+			report.DBm)      // Power in dBm
 		lines = append(lines, line)
 	}
 
