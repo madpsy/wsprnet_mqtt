@@ -136,7 +136,7 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 		return
 	}
 
-	// Determine band for statistics
+	// Determine band for statistics and deduplication
 	band := frequencyToBand(report.ReceiverFreq)
 
 	// Round timestamp to 2-minute boundary (WSPR cycle time)
@@ -144,10 +144,10 @@ func (sa *SpotAggregator) addToWindow(report *WSPRReportWithSource) {
 	timestamp := report.EpochTime.Unix()
 	windowKey := (timestamp / 120) * 120
 
-	// Create deduplication key: callsign + mode + window + frequency
+	// Create deduplication key: callsign + mode + window + band
 	// This ensures we only keep one spot per callsign per 2-minute window per band
-	// Including frequency prevents cross-band collisions (e.g., GM4DTH on 160m vs 630m)
-	dedupKey := fmt.Sprintf("%s_%s_%d_%d", report.Callsign, report.Mode, windowKey, report.ReceiverFreq)
+	// Using band instead of exact frequency handles slight frequency variations
+	dedupKey := fmt.Sprintf("%s_%s_%d_%s", report.Callsign, report.Mode, windowKey, band)
 
 	// Write raw spot to file
 	if sa.spotWriter != nil {
