@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"log"
+	"mime/multipart"
 	"net/http"
-	"net/url"
+	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -12,11 +16,14 @@ import (
 
 // WSPRNet constants
 const (
-	WSPRServerHostname = "wsprnet.org"
-	WSPRServerPort     = 80
-	WSPRMaxQueueSize   = 10000
-	WSPRMaxRetries     = 3
-	WSPRWorkerThreads  = 5
+	WSPRServerHostname  = "wsprnet.org"
+	WSPRServerPort      = 80
+	WSPRMaxQueueSize    = 10000
+	WSPRMaxRetries      = 3
+	WSPRWorkerThreads   = 1   // Reduced to 1 for MEPT bulk uploads
+	WSPRTimeoutSeconds  = 30  // Increased from 3 to handle slow WSPRnet responses
+	WSPRMaxBatchSize    = 999 // Maximum spots per MEPT upload
+	WSPRBatchWaitMillis = 500 // Wait time to accumulate spots for batching
 )
 
 // WSPR mode codes from http://www.wsprnet.org/drupal/node/8983
@@ -44,7 +51,14 @@ type WSPRReport struct {
 	NextRetryTime time.Time
 }
 
-// WSPRNet handles WSPRNet spot reporting
+// WSPRBatch represents a batch of reports to be uploaded together
+type WSPRBatch struct {
+	Reports       []WSPRReport
+	RetryCount    int
+	NextRetryTime time.Time
+}
+
+// WSPRNet handles WSPRNet spot reporting using MEPT bulk upload
 type WSPRNet struct {
 	// Configuration
 	receiverCallsign string
@@ -53,11 +67,11 @@ type WSPRNet struct {
 	programVersion   string
 	dryRun           bool
 
-	// Report queues
+	// Report queues - now batched
 	reportQueue []WSPRReport
 	queueMutex  sync.Mutex
 
-	retryQueue []WSPRReport
+	retryQueue []WSPRBatch
 	retryMutex sync.Mutex
 
 	// Statistics
@@ -85,7 +99,7 @@ func NewWSPRNet(callsign, locator, programName, programVersion string, dryRun bo
 		programVersion:   programVersion,
 		dryRun:           dryRun,
 		reportQueue:      make([]WSPRReport, 0, WSPRMaxQueueSize),
-		retryQueue:       make([]WSPRReport, 0, WSPRMaxQueueSize),
+		retryQueue:       make([]WSPRBatch, 0, WSPRMaxQueueSize),
 		stopCh:           make(chan struct{}),
 	}
 
@@ -139,77 +153,95 @@ func (w *WSPRNet) Submit(report *WSPRReport) error {
 	return nil
 }
 
-// workerThread processes reports from queue in parallel
+// workerThread processes reports from queue using MEPT bulk upload
 func (w *WSPRNet) workerThread() {
 	defer w.wg.Done()
 
 	for w.running {
-		var report WSPRReport
-		haveReport := false
+		var batch WSPRBatch
+		haveBatch := false
 
-		// Try to get a report from the main queue
-		w.queueMutex.Lock()
-		if len(w.reportQueue) > 0 {
-			report = w.reportQueue[0]
-			w.reportQueue = w.reportQueue[1:]
-			haveReport = true
+		// First check retry queue
+		currentTime := time.Now()
+		w.retryMutex.Lock()
+		if len(w.retryQueue) > 0 && w.retryQueue[0].NextRetryTime.Before(currentTime) {
+			batch = w.retryQueue[0]
+			w.retryQueue = w.retryQueue[1:]
+			haveBatch = true
 		}
-		w.queueMutex.Unlock()
+		w.retryMutex.Unlock()
 
-		// If no new report, check retry queue
-		if !haveReport {
-			currentTime := time.Now()
-			w.retryMutex.Lock()
-			if len(w.retryQueue) > 0 && w.retryQueue[0].NextRetryTime.Before(currentTime) {
-				report = w.retryQueue[0]
-				w.retryQueue = w.retryQueue[1:]
-				haveReport = true
+		// If no retry batch, try to build a new batch from main queue
+		if !haveBatch {
+			w.queueMutex.Lock()
+			if len(w.reportQueue) > 0 {
+				// Wait briefly to accumulate more spots for batching
+				w.queueMutex.Unlock()
+				time.Sleep(WSPRBatchWaitMillis * time.Millisecond)
+				w.queueMutex.Lock()
+
+				// Collect up to WSPRMaxBatchSize reports
+				batchSize := len(w.reportQueue)
+				if batchSize > WSPRMaxBatchSize {
+					batchSize = WSPRMaxBatchSize
+				}
+
+				if batchSize > 0 {
+					batch.Reports = make([]WSPRReport, batchSize)
+					copy(batch.Reports, w.reportQueue[:batchSize])
+					w.reportQueue = w.reportQueue[batchSize:]
+					haveBatch = true
+				}
 			}
-			w.retryMutex.Unlock()
+			w.queueMutex.Unlock()
 		}
 
-		// If we have a report, send it
-		if haveReport {
-			wasRetry := report.RetryCount > 0
-			success := w.sendReport(&report)
+		// If we have a batch, send it
+		if haveBatch {
+			wasRetry := batch.RetryCount > 0
+			spotsAccepted, spotsOffered, success := w.sendBatch(&batch)
 
 			w.statsMutex.Lock()
 			if success {
-				w.countSendsOK++
+				w.countSendsOK += spotsAccepted
+				if spotsAccepted < spotsOffered {
+					log.Printf("WSPRNet: Partial success - %d of %d spots accepted", spotsAccepted, spotsOffered)
+				}
 				if wasRetry {
-					log.Printf("WSPRNet: Successfully sent report for %s (after %d retry/retries)",
-						report.Callsign, report.RetryCount)
+					log.Printf("WSPRNet: Successfully sent batch of %d spots (after %d retry/retries)",
+						spotsAccepted, batch.RetryCount)
 				}
 			} else {
 				// Check if we should retry
-				if report.RetryCount < WSPRMaxRetries {
-					retryDelays := []int{5, 15, 60}
-					delayIndex := report.RetryCount
+				if batch.RetryCount < WSPRMaxRetries {
+					// Increased retry delays to 2 minutes to avoid retrying within same WSPR window
+					retryDelays := []int{120, 240, 360} // 2, 4, 6 minutes
+					delayIndex := batch.RetryCount
 					if delayIndex >= len(retryDelays) {
 						delayIndex = len(retryDelays) - 1
 					}
 					delay := retryDelays[delayIndex]
-					report.RetryCount++
-					report.NextRetryTime = time.Now().Add(time.Duration(delay) * time.Second)
+					batch.RetryCount++
+					batch.NextRetryTime = time.Now().Add(time.Duration(delay) * time.Second)
 
 					w.retryMutex.Lock()
 					if len(w.retryQueue) < WSPRMaxQueueSize {
-						w.retryQueue = append(w.retryQueue, report)
+						w.retryQueue = append(w.retryQueue, batch)
 						w.countRetries++
 					}
 					w.retryMutex.Unlock()
 
-					log.Printf("WSPRNet: Failed to send report for %s, will retry in %ds (attempt %d/%d)",
-						report.Callsign, delay, report.RetryCount, WSPRMaxRetries)
+					log.Printf("WSPRNet: Failed to send batch of %d spots, will retry in %d seconds (attempt %d/%d)",
+						len(batch.Reports), delay, batch.RetryCount, WSPRMaxRetries)
 				} else {
-					w.countSendsErrored++
-					log.Printf("WSPRNet: Failed to send report for %s after %d attempts, giving up",
-						report.Callsign, WSPRMaxRetries)
+					w.countSendsErrored += len(batch.Reports)
+					log.Printf("WSPRNet: Failed to send batch of %d spots after %d attempts, giving up",
+						len(batch.Reports), WSPRMaxRetries)
 				}
 			}
 			w.statsMutex.Unlock()
 		} else {
-			// No reports available, sleep briefly
+			// No batches available, sleep briefly
 			select {
 			case <-time.After(100 * time.Millisecond):
 			case <-w.stopCh:
@@ -219,39 +251,82 @@ func (w *WSPRNet) workerThread() {
 	}
 }
 
-// sendReport sends a single report to WSPRNet
-func (w *WSPRNet) sendReport(report *WSPRReport) bool {
+// sendBatch sends a batch of reports to WSPRNet using MEPT bulk upload
+// Returns (spotsAccepted, spotsOffered, success)
+func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
+	spotsOffered := len(batch.Reports)
+
 	// If dry run mode, just return success (logging is done by aggregator)
 	if w.dryRun {
-		return true
+		return spotsOffered, spotsOffered, true
 	}
 
-	// Build POST data
-	postData := w.buildPostData(report)
+	// Build MEPT format data
+	meptData := w.buildMEPTData(batch.Reports)
+
+	// Create multipart form data
+	var requestBody bytes.Buffer
+	writer := multipart.NewWriter(&requestBody)
+
+	// Add version field
+	versionStr := w.programName
+	if w.programVersion != "" {
+		versionStr = fmt.Sprintf("%s_%s", w.programName, w.programVersion)
+	}
+	if err := writer.WriteField("version", versionStr); err != nil {
+		log.Printf("WSPRNet: Failed to write version field: %v", err)
+		return 0, spotsOffered, false
+	}
+
+	// Add call field
+	if err := writer.WriteField("call", w.receiverCallsign); err != nil {
+		log.Printf("WSPRNet: Failed to write call field: %v", err)
+		return 0, spotsOffered, false
+	}
+
+	// Add grid field
+	if err := writer.WriteField("grid", w.receiverLocator); err != nil {
+		log.Printf("WSPRNet: Failed to write grid field: %v", err)
+		return 0, spotsOffered, false
+	}
+
+	// Add allmept field with spot data
+	part, err := writer.CreateFormFile("allmept", "spots.txt")
+	if err != nil {
+		log.Printf("WSPRNet: Failed to create allmept field: %v", err)
+		return 0, spotsOffered, false
+	}
+	if _, err := part.Write([]byte(meptData)); err != nil {
+		log.Printf("WSPRNet: Failed to write allmept data: %v", err)
+		return 0, spotsOffered, false
+	}
+
+	if err := writer.Close(); err != nil {
+		log.Printf("WSPRNet: Failed to close multipart writer: %v", err)
+		return 0, spotsOffered, false
+	}
 
 	// Create HTTP client with timeout
 	client := &http.Client{
-		Timeout: 3 * time.Second,
+		Timeout: WSPRTimeoutSeconds * time.Second,
 	}
 
-	// Build request
-	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/post?", WSPRServerHostname), strings.NewReader(postData))
+	// Build request to MEPT endpoint
+	req, err := http.NewRequest("POST", fmt.Sprintf("http://%s/meptspots.php", WSPRServerHostname), &requestBody)
 	if err != nil {
 		log.Printf("WSPRNet: Failed to create request: %v", err)
-		return false
+		return 0, spotsOffered, false
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Connection", "Keep-Alive")
 	req.Header.Set("Host", WSPRServerHostname)
-	req.Header.Set("Accept-Language", "en-US,*")
-	req.Header.Set("User-Agent", "Mozilla/5.0")
 
 	// Send request
 	resp, err := client.Do(req)
 	if err != nil {
 		log.Printf("WSPRNet: Failed to send request: %v", err)
-		return false
+		return 0, spotsOffered, false
 	}
 	defer func() {
 		if err := resp.Body.Close(); err != nil {
@@ -259,67 +334,66 @@ func (w *WSPRNet) sendReport(report *WSPRReport) bool {
 		}
 	}()
 
-	// Check response
+	// Read response body
+	bodyBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Printf("WSPRNet: Failed to read response body: %v", err)
+		return 0, spotsOffered, false
+	}
+	bodyStr := string(bodyBytes)
+
+	// Check for upload limit reached
+	if strings.Contains(bodyStr, "Upload limit") && strings.Contains(bodyStr, "reached") {
+		log.Printf("WSPRNet: Upload limit reached, treating as success to avoid retrying")
+		return spotsOffered, spotsOffered, true
+	}
+
+	// Parse response for "X spot(s) added" - wsprdaemon style verification
+	// Response format: "X spot(s) added out of Y"
+	re := regexp.MustCompile(`(\d+)\s+spot.*added.*out of\s+(\d+)`)
+	matches := re.FindStringSubmatch(bodyStr)
+
+	if len(matches) == 3 {
+		spotsAccepted, err1 := strconv.Atoi(matches[1])
+		spotsInResponse, err2 := strconv.Atoi(matches[2])
+
+		if err1 == nil && err2 == nil {
+			if spotsInResponse != spotsOffered {
+				log.Printf("WSPRNet: Warning - response mentions %d spots but we offered %d", spotsInResponse, spotsOffered)
+			}
+			return spotsAccepted, spotsOffered, true
+		}
+	}
+
+	// If we got a 200 response but couldn't parse the spot count, log it but treat as success
 	if resp.StatusCode == 200 {
-		return true
+		log.Printf("WSPRNet: Got 200 response but couldn't parse spot count. Response: %s", bodyStr)
+		// Assume success to avoid duplicate retries
+		return spotsOffered, spotsOffered, true
 	}
 
-	log.Printf("WSPRNet: Unexpected response: %d %s", resp.StatusCode, resp.Status)
-	return false
+	log.Printf("WSPRNet: Unexpected response: %d %s, body: %s", resp.StatusCode, resp.Status, bodyStr)
+	return 0, spotsOffered, false
 }
 
-// buildPostData builds the POST data for WSPRNet submission
-func (w *WSPRNet) buildPostData(report *WSPRReport) string {
-	// Convert epoch time to UTC datetime
-	tm := report.EpochTime.UTC()
-	date := tm.Format("060102")
-	timeStr := tm.Format("1504")
+// buildMEPTData builds the MEPT format data for bulk upload
+// Format: YYMMDD HHMM SNR DT FREQ CALL GRID DBM DRIFT (space-separated)
+func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
+	var lines []string
 
-	// Get mode code
-	modeCode := w.getModeCode(report.Mode)
+	for _, report := range reports {
+		tm := report.EpochTime.UTC()
+		date := tm.Format("060102")
+		timeStr := tm.Format("1504")
+		freq := fmt.Sprintf("%.6f", float64(report.Frequency)/1000000.0)
 
-	// Build parameters
-	params := url.Values{}
-	params.Set("function", "wspr")
-	params.Set("rcall", w.receiverCallsign)
-	params.Set("rgrid", w.receiverLocator)
-	params.Set("rqrg", fmt.Sprintf("%.6f", float64(report.ReceiverFreq)/1000000.0))
-	params.Set("date", date)
-	params.Set("time", timeStr)
-	params.Set("sig", fmt.Sprintf("%d", report.SNR))
-	params.Set("dt", fmt.Sprintf("%.2f", report.DT))
-	params.Set("drift", fmt.Sprintf("%d", report.Drift))
-	params.Set("tcall", report.Callsign)
-	params.Set("tgrid", report.Locator)
-	params.Set("tqrg", fmt.Sprintf("%.6f", float64(report.Frequency)/1000000.0))
-	params.Set("dbm", fmt.Sprintf("%d", report.DBm))
-	// Only include version if it's not empty
-	if w.programVersion != "" {
-		params.Set("version", fmt.Sprintf("%s %s", w.programName, w.programVersion))
-	} else {
-		params.Set("version", w.programName)
+		line := fmt.Sprintf("%s %s %d %.1f %s %s %s %d %d",
+			date, timeStr, report.SNR, report.DT, freq,
+			report.Callsign, report.Locator, report.DBm, report.Drift)
+		lines = append(lines, line)
 	}
-	params.Set("mode", fmt.Sprintf("%d", modeCode))
 
-	return params.Encode()
-}
-
-// getModeCode returns the mode code for a given mode name
-func (w *WSPRNet) getModeCode(mode string) int {
-	switch mode {
-	case "WSPR":
-		return WSPRModeWSPR
-	case "FST4W-120":
-		return WSPRModeFST4W120
-	case "FST4W-300":
-		return WSPRModeFST4W300
-	case "FST4W-900":
-		return WSPRModeFST4W900
-	case "FST4W-1800":
-		return WSPRModeFST4W1800
-	default:
-		return WSPRModeWSPR
-	}
+	return strings.Join(lines, "\n")
 }
 
 // Stop stops the WSPRNet processing
