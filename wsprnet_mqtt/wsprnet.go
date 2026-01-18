@@ -225,8 +225,8 @@ func (w *WSPRNet) workerThread() {
 			} else {
 				// Check if we should retry
 				if batch.RetryCount < WSPRMaxRetries {
-					// Increased retry delays to 2 minutes to avoid retrying within same WSPR window
-					retryDelays := []int{120, 240, 360} // 2, 4, 6 minutes
+					// Retry delays to avoid overwhelming the server
+					retryDelays := []int{60, 120, 180} // 1, 2, 3 minutes
 					delayIndex := batch.RetryCount
 					if delayIndex >= len(retryDelays) {
 						delayIndex = len(retryDelays) - 1
