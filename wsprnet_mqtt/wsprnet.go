@@ -364,9 +364,9 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 		return spotsOffered, spotsOffered, true
 	}
 
-	// Parse response for "X spot(s) added" - wsprdaemon style verification
-	// Response format: "X spot(s) added out of Y"
-	re := regexp.MustCompile(`(\d+)\s+spot.*added.*out of\s+(\d+)`)
+	// Parse response for "X spot(s) added" or "X out of Y spot(s) added"
+	// wsprdaemon checks for this pattern at line 309-310
+	re := regexp.MustCompile(`(\d+)\s+(?:out of|spot.*added.*out of)\s+(\d+)`)
 	matches := re.FindStringSubmatch(bodyStr)
 
 	if len(matches) == 3 {
@@ -377,16 +377,26 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 			if spotsInResponse != spotsOffered {
 				log.Printf("WSPRNet: Warning - response mentions %d spots but we offered %d", spotsInResponse, spotsOffered)
 			}
+			if spotsAccepted == 0 {
+				log.Printf("WSPRNet: FAILED - 0 of %d spots accepted in %.2f seconds. Response: %s", spotsOffered, elapsed.Seconds(), bodyStr)
+				return 0, spotsOffered, false
+			}
 			log.Printf("WSPRNet: SUCCESS - Uploaded %d of %d spots in %.2f seconds", spotsAccepted, spotsOffered, elapsed.Seconds())
 			return spotsAccepted, spotsOffered, true
 		}
 	}
 
-	// If we got a 200 response but couldn't parse the spot count, log it but treat as success
+	// If we got a 200 response but couldn't parse the spot count, this is likely an error
+	// The response should always include "X out of Y spot(s) added" if successful
 	if resp.StatusCode == 200 {
-		log.Printf("WSPRNet: SUCCESS (assumed) - Got 200 response in %.2f seconds but couldn't parse spot count. Response: %s", elapsed.Seconds(), bodyStr)
-		// Assume success to avoid duplicate retries
-		return spotsOffered, spotsOffered, true
+		// Check if response indicates no spots were processed (just "Processing took X milliseconds")
+		if strings.Contains(bodyStr, "Processing took") && !strings.Contains(bodyStr, "spot") {
+			log.Printf("WSPRNet: FAILED - Server processed request but added no spots in %.2f seconds. Response: %s", elapsed.Seconds(), bodyStr)
+			return 0, spotsOffered, false
+		}
+		log.Printf("WSPRNet: WARNING - Got 200 response in %.2f seconds but couldn't parse spot count. Response: %s", elapsed.Seconds(), bodyStr)
+		// Don't assume success - return failure to trigger retry
+		return 0, spotsOffered, false
 	}
 
 	log.Printf("WSPRNet: FAILED - Unexpected response after %.2f seconds: %d %s, body: %s", elapsed.Seconds(), resp.StatusCode, resp.Status, bodyStr)
