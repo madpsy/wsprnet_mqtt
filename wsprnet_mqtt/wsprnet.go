@@ -344,7 +344,7 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Connection", "Keep-Alive")
 	req.Header.Set("Host", WSPRServerHostname)
-	req.Header.Set("Accept-Encoding", "gzip, deflate")
+	// Don't set Accept-Encoding manually - let Go's HTTP client handle compression automatically
 
 	// Send request and measure time
 	resp, err := client.Do(req)
