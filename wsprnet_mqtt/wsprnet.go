@@ -269,14 +269,9 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	// Build MEPT format data
 	meptData := w.buildMEPTData(batch.Reports)
 
-	// Log first few spots for debugging
-	lines := strings.Split(meptData, "\n")
-	if len(lines) > 0 {
-		log.Printf("WSPRNet: First spot: %s", lines[0])
-		if len(lines) > 1 {
-			log.Printf("WSPRNet: Second spot: %s", lines[1])
-		}
-	}
+	// Log all spots being submitted
+	log.Println("WSPRNet: MEPT data being submitted:")
+	log.Println(meptData)
 
 	// Create multipart form data
 	var requestBody bytes.Buffer
