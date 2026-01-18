@@ -384,7 +384,8 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 }
 
 // buildMEPTData builds the MEPT format data for bulk upload
-// Format: YYMMDD HHMM SNR DT FREQ CALL GRID DBM DRIFT (space-separated)
+// Format matches wsprd output: Date Time Sync_Quality SNR DT Freq Drift Call Grid Power Reporter Reporter_Grid km az
+// This is the 14-field format that wsprnet.org/meptspots.php expects
 func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 	var lines []string
 
@@ -394,9 +395,24 @@ func (w *WSPRNet) buildMEPTData(reports []WSPRReport) string {
 		timeStr := tm.Format("1504")
 		freq := fmt.Sprintf("%.6f", float64(report.Frequency)/1000000.0)
 
-		line := fmt.Sprintf("%s %s %d %.1f %s %s %s %d %d",
-			date, timeStr, report.SNR, report.DT, freq,
-			report.Callsign, report.Locator, report.DBm, report.Drift)
+		// MEPT format requires 14 fields in this exact order:
+		// Date Time Sync_Quality SNR DT Freq Drift Call Grid Power Reporter Reporter_Grid km az
+		// We don't have sync_quality, km, or az, so use placeholder values
+		line := fmt.Sprintf("%s %s %d %d %.1f %s %d %s %s %d %s %s %d %d",
+			date,               // Date (YYMMDD)
+			timeStr,            // Time (HHMM)
+			1,                  // Sync_Quality (placeholder, typically 1)
+			report.SNR,         // SNR
+			report.DT,          // DT (time offset)
+			freq,               // Frequency in MHz
+			report.Drift,       // Drift in Hz/minute
+			report.Callsign,    // Transmitter callsign
+			report.Locator,     // Transmitter grid
+			report.DBm,         // Power in dBm
+			w.receiverCallsign, // Reporter (receiver) callsign
+			w.receiverLocator,  // Reporter (receiver) grid
+			0,                  // Distance in km (placeholder, server calculates)
+			0)                  // Azimuth in degrees (placeholder, server calculates)
 		lines = append(lines, line)
 	}
 
