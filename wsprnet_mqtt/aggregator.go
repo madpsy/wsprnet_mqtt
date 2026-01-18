@@ -394,10 +394,8 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 	}
 	sort.Strings(bands)
 
-	// Print summary
-	log.Println("================================================================================")
-	log.Printf("WSPR Window: %s (submitting %d unique spots)", windowTime.Format("2006-01-02 15:04:05 UTC"), len(spots))
-	log.Println("================================================================================")
+	// Submit all spots to WSPRNet and PSKReporter
+	log.Printf("WSPR Window %s: Submitting %d unique spots to WSPRNet", windowTime.Format("15:04 UTC"), len(spots))
 
 	for _, band := range bands {
 		reports := bandSpots[band]
@@ -407,42 +405,31 @@ func (sa *SpotAggregator) flushWindow(windowKey int64, spots map[string]*WSPRRep
 			return reports[i].Callsign < reports[j].Callsign
 		})
 
-		log.Printf("\n--- %s (%d spots) ---", band, len(reports))
 		for _, report := range reports {
-			log.Printf("  %-10s  %6.3f MHz  SNR: %3d dB  Power: %2d dBm  Grid: %s  [%s]",
-				report.Callsign,
-				float64(report.Frequency)/1000000.0,
-				report.SNR,
-				report.DBm,
-				report.Locator,
-				report.InstanceName)
-
 			// Submit to WSPRNet
 			err := sa.wsprNet.Submit(report.WSPRReport)
 			submitted := (err == nil)
 			errorMsg := ""
 			if err != nil {
 				errorMsg = err.Error()
-				log.Printf("    ERROR: Failed to submit to WSPRNet: %v", err)
+				log.Printf("ERROR: Failed to queue %s for WSPRNet: %v", report.Callsign, err)
 			}
 
 			// Submit to PSKReporter if enabled
 			if sa.pskReporter != nil {
 				if pskErr := sa.pskReporter.Submit(report.WSPRReport); pskErr != nil {
-					log.Printf("    ERROR: Failed to submit to PSKReporter: %v", pskErr)
+					log.Printf("ERROR: Failed to queue %s for PSKReporter: %v", report.Callsign, pskErr)
 				}
 			}
 
 			// Write deduped spot with submission status
 			if sa.spotWriter != nil {
 				if writeErr := sa.spotWriter.WriteDeduped(report, submitted, errorMsg); writeErr != nil {
-					log.Printf("    Warning: Failed to write deduped spot: %v", writeErr)
+					log.Printf("Warning: Failed to write deduped spot for %s: %v", report.Callsign, writeErr)
 				}
 			}
 		}
 	}
-
-	log.Println("================================================================================")
 
 	// Finish statistics window (pass 0 for failed count since failures are tracked separately by WSPRNet)
 	sa.stats.FinishWindow(len(spots), totalDuplicates, 0, bandBreakdown)
