@@ -305,7 +305,9 @@ func (mc *MQTTClient) messageHandler(client mqtt.Client, msg mqtt.Message) {
 	}
 
 	// Ignore messages with timestamps before application startup (retained messages)
-	if timestamp.Before(mc.startTime) {
+	// Only filter for the first 5 seconds after startup to avoid rejecting valid late-arriving messages
+	timeSinceStartup := time.Since(mc.startTime)
+	if timeSinceStartup < 5*time.Second && timestamp.Before(mc.startTime) {
 		if mc.msgCount <= 100 {
 			// Log first few rejections so user knows filtering is working
 			log.Printf("MQTT: Ignoring retained message from %s (timestamp: %s, before startup at %s)",
