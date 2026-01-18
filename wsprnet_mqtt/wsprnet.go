@@ -388,10 +388,12 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 				log.Printf("WSPRNet: Warning - response mentions %d spots but we offered %d", spotsInResponse, spotsOffered)
 			}
 			if spotsAccepted == 0 {
-				log.Printf("WSPRNet: FAILED - 0 of %d spots accepted in %.2f seconds. Response: %s", spotsOffered, elapsed.Seconds(), bodyStr)
-				return 0, spotsOffered, false
+				log.Printf("WSPRNet: Server accepted 0 of %d spots in %.2f seconds (valid response, not retrying). Response: %s", spotsOffered, elapsed.Seconds(), bodyStr)
+			} else if spotsAccepted < spotsOffered {
+				log.Printf("WSPRNet: Partial success - %d of %d spots accepted in %.2f seconds", spotsAccepted, spotsOffered, elapsed.Seconds())
+			} else {
+				log.Printf("WSPRNet: SUCCESS - Uploaded %d of %d spots in %.2f seconds", spotsAccepted, spotsOffered, elapsed.Seconds())
 			}
-			log.Printf("WSPRNet: SUCCESS - Uploaded %d of %d spots in %.2f seconds", spotsAccepted, spotsOffered, elapsed.Seconds())
 			return spotsAccepted, spotsOffered, true
 		}
 	}
