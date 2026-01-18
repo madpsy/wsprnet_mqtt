@@ -298,8 +298,12 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 		return 0, spotsOffered, false
 	}
 
-	// Add grid field
-	if err := writer.WriteField("grid", w.receiverLocator); err != nil {
+	// Add grid field - must be exactly 4 characters
+	receiverGrid := w.receiverLocator
+	if len(receiverGrid) > 4 {
+		receiverGrid = receiverGrid[:4]
+	}
+	if err := writer.WriteField("grid", receiverGrid); err != nil {
 		log.Printf("WSPRNet: Failed to write grid field: %v", err)
 		return 0, spotsOffered, false
 	}
