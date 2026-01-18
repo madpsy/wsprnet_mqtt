@@ -326,9 +326,12 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 		return 0, spotsOffered, false
 	}
 
-	// Create HTTP client with timeout
+	// Create HTTP client with timeout and compression enabled
 	client := &http.Client{
 		Timeout: WSPRTimeoutSeconds * time.Second,
+		Transport: &http.Transport{
+			DisableCompression: false, // Enable gzip compression
+		},
 	}
 
 	// Build request to MEPT endpoint
@@ -341,6 +344,7 @@ func (w *WSPRNet) sendBatch(batch *WSPRBatch) (int, int, bool) {
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("Connection", "Keep-Alive")
 	req.Header.Set("Host", WSPRServerHostname)
+	req.Header.Set("Accept-Encoding", "gzip, deflate")
 
 	// Send request and measure time
 	resp, err := client.Do(req)
